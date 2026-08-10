@@ -1,7 +1,31 @@
-import time
+import os
 import sys
+import time
 import argparse
+import subprocess
 from datetime import datetime
+
+REQUIRED_PACKAGES = ["fastapi", "duckdb", "pandas", "sklearn", "psycopg2", "pyarrow"]
+def ensure_dependencies():
+    missing = [pkg for pkg in REQUIRED_PACKAGES if not _module_exists(pkg)]
+    if missing:
+        print(f"[Notice] Scheduler 检测到缺少依赖包 {missing}，正在自动安装...")
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        req_file = os.path.join(backend_dir, "requirements.txt")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file])
+        except Exception:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file, "--user"])
+
+def _module_exists(pkg):
+    try:
+        __import__(pkg)
+        return True
+    except ImportError:
+        return False
+
+ensure_dependencies()
+
 from backend.etl.run_pipeline import run_full_pipeline
 
 def start_scheduler(interval_minutes=30, run_immediately=True):
