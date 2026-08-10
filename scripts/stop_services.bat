@@ -16,3 +16,6 @@ echo [3/3] Terminating Python ETL Scheduler...
 wmic process where "commandline like '%%backend.etl.scheduler%%'" call terminate >nul 2>&1
 
 echo [SUCCESS] All services stopped successfully.
+echo ===================================================
+echo.
+pause

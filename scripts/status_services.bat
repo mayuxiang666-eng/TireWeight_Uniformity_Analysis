@@ -26,3 +26,5 @@ echo [3/3] ETL Data Status:
 powershell -Command "try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/etl/status' -TimeoutSec 3; Write-Host ('  -> Data Path: ' + $r.data.data_path); Write-Host ('  -> Last Modified: ' + $r.data.last_modified); Write-Host ('  -> Data Size: ' + $r.data.size_mb + ' MB'); Write-Host ('  -> Loaded Rows: ' + $r.data.loaded_rows + ' rows'); } catch { Write-Host '  -> Backend API unreachable' }"
 
 echo ===================================================
+echo.
+pause
