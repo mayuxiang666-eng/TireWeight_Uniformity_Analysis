@@ -12,17 +12,13 @@ if exist "%ROOT_DIR%\.venv\Scripts\python.exe" (
     set PYTHON_CMD="C:\Users\uif77331\Desktop\111\111.venv\Scripts\python.exe"
 )
 
-echo [1/3] Starting FastAPI Backend (Port 8000)...
+echo [1/2] Starting Unified FastAPI Backend & Frontend Web Service (Port 8000)...
 start "Backend_API_Port8000" %PYTHON_CMD% backend\run_server.py
 
-echo [2/3] Starting ETL Scheduler Daemon (Every 30 Minutes)...
+echo [2/2] Starting ETL Scheduler Daemon (Every 30 Minutes)...
 start "ETL_Scheduler_30Min" %PYTHON_CMD% -m backend.etl.scheduler --interval 30
 
-echo [3/3] Starting Frontend Service (Port 5173)...
-start "Frontend_Vite_Port5173" npx --yes vite preview --host 0.0.0.0 --port 5173
-
 echo.
-echo [SUCCESS] Services launched.
-echo Backend API: http://127.0.0.1:8000
-echo Frontend UI: http://127.0.0.1:5173
+echo [SUCCESS] All Production Services Launched!
+echo Web UI & API: http://127.0.0.1:8000
 echo ===================================================
