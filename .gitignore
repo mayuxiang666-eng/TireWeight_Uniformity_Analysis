@@ -1,0 +1,48 @@
+# Node / Frontend
+node_modules
+dist
+dist-ssr
+coverage
+*.local
+*.timestamp-*-*.mjs
+.eslintcache
+
+# Logs & Output
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+out.txt
+error_log.txt
+
+# Python / Environment
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+.pytest_cache/
+*.duckdb-wal
+*.duckdb.tmp
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# Cypress & Vitest
+/cypress/videos/
+/cypress/screenshots/
+__screenshots__/
