@@ -26,5 +26,3 @@ echo [SUCCESS] Services launched in background.
 echo Backend API: http://127.0.0.1:8000
 echo Frontend UI: http://127.0.0.1:5173
 echo ===================================================
-echo.
-pause

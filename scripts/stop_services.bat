@@ -17,5 +17,3 @@ wmic process where "commandline like '%%backend.etl.scheduler%%'" call terminate
 
 echo [SUCCESS] All services stopped successfully.
 echo ===================================================
-echo.
-pause
