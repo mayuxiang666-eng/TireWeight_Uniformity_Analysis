@@ -36,12 +36,24 @@ app.add_middleware(
 )
 
 # ── 数据源路径与全局常驻连接 ────────────────────────────────────
-_BASE = os.path.dirname(__file__)
-DATA_PATH = "d:/Ava/untitled1/untitled1/src/yield_flat_table_joined_100_cleaned.parquet"
+_BASE = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(_BASE, "data", "yield_flat_table_joined_100_cleaned.parquet")
+if not os.path.exists(DATA_PATH):
+    legacy_path = "d:/Ava/untitled1/untitled1/src/yield_flat_table_joined_100_cleaned.parquet"
+    if os.path.exists(legacy_path):
+        DATA_PATH = legacy_path
 
 # 全局 DuckDB 常驻连接与内存表，将 Parquet 数据载入内存以提升并发检索速度
 db_conn = duckdb.connect()
-db_conn.execute(f"CREATE OR REPLACE TABLE clean_yield AS SELECT * FROM read_parquet('{DATA_PATH}')")
+
+def reload_duckdb_data():
+    """重新加载数据并重建内存表"""
+    if os.path.exists(DATA_PATH):
+        db_conn.execute(f"CREATE OR REPLACE TABLE clean_yield AS SELECT * FROM read_parquet('{DATA_PATH}')")
+        return True
+    return False
+
+reload_duckdb_data()
 
 
 def qry(sql: str, params=None):
@@ -248,10 +260,59 @@ def diagnose_machine(machine_id, workcenter_col, study_from, study_to):
         return "全局物料批次缺陷", f"物料批次 {primary['lot']} 在全场所有设备上异常率均偏高（Local Lift={primary['local_lift']:.2f}, Cross={primary['cross_lift']:.2f}），判定为原材料自身缺陷。建议封存并追溯该批次"
 
 
-# ── 健康检测 ────────────────────────────────────────────────────
+# ── 健康检测与 ETL 重载 ──────────────────────────────────────────
 @app.get("/")
 def root():
     return {"status": "ok", "message": "轮胎质量分析看板 API 运行中"}
+
+
+@app.post("/api/etl/reload")
+def reload_etl_data():
+    """在线重载最新的 Cleaned Parquet 数据到 DuckDB 内存表"""
+    try:
+        success = reload_duckdb_data()
+        if not success:
+            return {"status": "error", "message": f"未找到数据文件: {DATA_PATH}"}
+        
+        row_res = qry("SELECT COUNT(*) as n FROM clean_yield")
+        row_count = row_res[0]['n'] if row_res else 0
+        return {
+            "status": "success", 
+            "message": "DuckDB 内存数据刷新成功", 
+            "data_path": DATA_PATH,
+            "row_count": row_count
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/etl/status")
+def get_etl_status():
+    """查看数据源状态与最后修改时间"""
+    try:
+        file_exists = os.path.exists(DATA_PATH)
+        mtime_str = None
+        size_bytes = 0
+        if file_exists:
+            mtime = os.path.getmtime(DATA_PATH)
+            mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+            size_bytes = os.path.getsize(DATA_PATH)
+            
+        row_res = qry("SELECT COUNT(*) as n FROM clean_yield") if file_exists else []
+        row_count = row_res[0]['n'] if row_res else 0
+        
+        return {
+            "status": "success",
+            "data": {
+                "data_path": DATA_PATH,
+                "exists": file_exists,
+                "last_modified": mtime_str,
+                "size_mb": round(size_bytes / (1024 * 1024), 2),
+                "loaded_rows": row_count
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ── 1. 总览摘要 ─────────────────────────────────────────────────

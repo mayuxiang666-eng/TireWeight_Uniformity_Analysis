@@ -46,3 +46,8 @@ ENV/
 /cypress/videos/
 /cypress/screenshots/
 __screenshots__/
+
+# ETL Data & Credentials
+backend/data/*.parquet
+backend/config/db_config.json
+backend/config/secret.key
