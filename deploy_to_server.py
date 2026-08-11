@@ -110,6 +110,11 @@ def deploy():
         os.path.join(LOCAL_ROOT, "scripts", "nginx.conf"),
         os.path.join(TARGET_SERVER_DIR, "nginx", "conf", "nginx.conf")
     )
+    copy_file_safe(
+        os.path.join(LOCAL_ROOT, "scripts", "nginx.conf"),
+        os.path.join(TARGET_SERVER_DIR, "nginx", "nginx-1.26.2", "conf", "nginx.conf")
+    )
+
     
     # 控制脚本
     copy_dir_filtered(
