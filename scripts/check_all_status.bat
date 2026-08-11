@@ -1,33 +1,46 @@
 @echo off
-chcp 65001 >nul
-title TireWeight Uniformity Analysis Health Check
-
+:: TireWeight_Uniformity_Analysis Service Status Checker
 echo ===================================================
-echo TireWeight_Uniformity_Analysis Health Check
+echo   TireWeight Uniformity Analysis Status Check
 echo ===================================================
+echo.
 
-echo [1/3] Checking Port 8080 (Nginx):
-netstat -aon | findstr ":8080 " | findstr "LISTENING"
+set ROOT_DIR=D:\TU AI\TireWeight_Uniformity_Analysis
+set DATA_PATH=%ROOT_DIR%\backend\data\yield_flat_table_joined_100_cleaned.parquet
+
+:: 1. Check Nginx Port 8088
+echo [1/3] Checking Nginx Port 8088...
+netstat -aon | findstr ":8088 " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo   STATUS: RUNNING (Port 8080 is listening)
+    echo       [OK] Nginx is RUNNING on Port 8088
 ) else (
-    echo   STATUS: STOPPED (Port 8080 not listening)
+    echo       [FAIL] Nginx is NOT listening on Port 8088
 )
 echo.
 
-echo [2/3] Checking Port 8000 (FastAPI Backend):
-netstat -aon | findstr ":8000 " | findstr "LISTENING"
+:: 2. Check FastAPI Port 8000
+echo [2/3] Checking FastAPI Backend Port 8000...
+netstat -aon | findstr ":8000 " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo   STATUS: RUNNING (Port 8000 is listening)
+    echo       [OK] FastAPI Service is RUNNING on Port 8000
 ) else (
-    echo   STATUS: STOPPED (Port 8000 not listening)
+    echo       [FAIL] FastAPI Service is NOT listening on Port 8000
 )
 echo.
 
-echo [3/3] Fetching DuckDB Data Status...
-powershell -NoProfile -Command "$r = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/etl/status' -ErrorAction SilentlyContinue; if ($r) { Write-Host ('  -> Data Path: ' + $r.data.data_path); Write-Host ('  -> Last Modified: ' + $r.data.last_modified); Write-Host ('  -> Loaded Rows: ' + $r.data.loaded_rows + ' rows'); } else { Write-Host '  -> Backend API loading or unreachable'; }"
+:: 3. Check Parquet Data File Status
+echo [3/3] Checking Parquet Dataset...
+if exist "%DATA_PATH%" (
+    echo       [OK] Cleaned Parquet file exists:
+    dir "%DATA_PATH%" | findstr "cleaned.parquet"
+) else (
+    echo       [FAIL] Cleaned Parquet file missing at %DATA_PATH%
+)
+echo.
 
 echo ===================================================
-echo.
-echo Press any key to exit status check...
-pause >nul
+echo Status Inspection Completed!
+echo Primary Access URL:   http://10.246.97.159:8088
+echo Direct FastAPI URL:   http://10.246.97.159:8000
+echo ===================================================
+pause

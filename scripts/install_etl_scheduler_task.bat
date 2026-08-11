@@ -1,7 +1,7 @@
 @echo off
 :: TireWeight_Uniformity_Analysis Windows Task Scheduler Installer for ETL
 echo ===================================================
-echo 正在注册 ETL_JOB 每 30 分钟轮询 Windows 计划任务...
+echo Registering ETL_JOB Task Scheduler (30-min interval)...
 echo ===================================================
 
 set ROOT_DIR=D:\TU AI\TireWeight_Uniformity_Analysis
@@ -12,19 +12,19 @@ mkdir "%LOG_DIR%" >nul 2>&1
 set JOB_BAT=%ROOT_DIR%\scripts\run_etl_job.bat
 
 if not exist "%JOB_BAT%" (
-    echo [ERROR] 未找到启动脚本 %JOB_BAT%
+    echo [ERROR] Launcher script not found: %JOB_BAT%
     pause
     exit /b 1
 )
 
-echo 注册计划任务 ETL_JOB (每 30 分钟触发拉取清洗与热更新)...
+echo Creating Task Scheduler "ETL_JOB"...
 schtasks /create /tn "ETL_JOB" /tr "\"%JOB_BAT%\"" /sc minute /mo 30 /ru SYSTEM /f
 
 if %errorlevel% equ 0 (
-    echo [SUCCESS] Windows 计划任务 "ETL_JOB" 注册成功！
-    echo 触发频率: 每 30 分钟全自动轮询 Redshift 拉取清洗并通知热重载。
+    echo [SUCCESS] Windows Task Scheduler "ETL_JOB" created successfully!
+    echo Frequency: Every 30 minutes automatic data fetch, clean and reload.
 ) else (
-    echo [NOTICE] 注册需管理员权限，请尝试右键以管理员身份运行此脚本。
+    echo [NOTICE] Administrator privileges required. Please right-click and run as Administrator.
 )
 echo ===================================================
 pause
