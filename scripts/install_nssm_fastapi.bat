@@ -46,6 +46,7 @@ echo 注册 FastAPI-Service 系统服务...
 %NSSM_EXE% set FastAPI-Service DisplayName "TireWeight Uniformity Analysis FastAPI Service"
 %NSSM_EXE% set FastAPI-Service Description "轮胎质量与均匀性分析看板 FastAPI 后端服务 (端口 8000)"
 %NSSM_EXE% set FastAPI-Service Start SERVICE_AUTO_START
+%NSSM_EXE% set FastAPI-Service AppEnvironmentExtra PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 %NSSM_EXE% set FastAPI-Service AppStdout "%LOG_DIR%\fastapi_out.log"
 %NSSM_EXE% set FastAPI-Service AppStderr "%LOG_DIR%\fastapi_err.log"
 

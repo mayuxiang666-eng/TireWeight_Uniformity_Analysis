@@ -2,6 +2,15 @@ import os
 import sys
 import subprocess
 
+# 强制系统输出使用 UTF-8 编码，防止 Windows NSSM 服务 cp1252 编码抛出 UnicodeEncodeError
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+
 # 1. 自动检查并安装 Python 生产依赖包
 REQUIRED_PACKAGES = ["fastapi", "uvicorn", "duckdb", "pandas", "sklearn", "psycopg2", "pyarrow"]
 
