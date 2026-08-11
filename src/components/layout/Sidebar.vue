@@ -49,7 +49,7 @@ let clockTimer = null
 
 async function checkApi() {
   try {
-    await axios.get('http://127.0.0.1:8000/', { timeout: 3000 })
+    await axios.get('/api/etl/status', { timeout: 3000 })
     apiOk.value = true
   } catch {
     apiOk.value = false
