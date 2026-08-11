@@ -156,10 +156,13 @@ def clean_main(input_path=None, output_path=None, recipes_path=None):
     print(f"  RFH1 异常 (90B): {df['rfh1_anomaly'].sum()} 行 ({df['rfh1_anomaly'].mean()*100:.2f}%)")
     print(f"  综合异常 (grade_anomaly): {df['grade_anomaly'].sum()} 行 ({df['grade_anomaly'].mean()*100:.2f}%)")
         
-    print("\n--- 步骤 5: 将清洗后的数据保存为新文件 ---")
+    print("\n--- 步骤 5: 原子化保存清洗后的数据文件 (Atomic Replacement) ---")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df.to_parquet(output_path, compression='snappy', index=False)
-    print(f"[Success] 清洗完成！保存至: {output_path}")
+    tmp_path = output_path + ".tmp"
+    df.to_parquet(tmp_path, compression='snappy', index=False)
+    # 原子化替换，避免 FastAPI 在写入过程中读取到未完成的半写入文件
+    os.replace(tmp_path, output_path)
+    print(f"[Success] 原子化清洗完成！终态保存至: {output_path}")
     print(f"最终数据集大小: {len(df)} 行, {len(df.columns)} 列。")
     return True
 
