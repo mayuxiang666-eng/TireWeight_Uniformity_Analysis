@@ -6,12 +6,12 @@ echo ===================================================
 echo TireWeight_Uniformity_Analysis Health Check
 echo ===================================================
 
-echo [1/3] Checking Port 80 (Nginx):
-netstat -aon | findstr ":80 " | findstr "LISTENING"
+echo [1/3] Checking Port 8080 (Nginx):
+netstat -aon | findstr ":8080 " | findstr "LISTENING"
 if %errorlevel% equ 0 (
-    echo   STATUS: RUNNING (Port 80 is listening)
+    echo   STATUS: RUNNING (Port 8080 is listening)
 ) else (
-    echo   STATUS: STOPPED (Port 80 not listening)
+    echo   STATUS: STOPPED (Port 8080 not listening)
 )
 echo.
 
