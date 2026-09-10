@@ -460,14 +460,14 @@ const option = computed(() => {
         symbol: 'circle',
         symbolSize: 6,
         itemStyle: {
-          color: '#3b82f6',
+          color: '#f59e0b',
           borderColor: '#fff',
           borderWidth: 2
         },
         label: {
           show: props.indicator === 'weight',
           position: 'top',
-          color: '#3b82f6',
+          color: '#f59e0b',
           fontSize: 9,
           formatter: (p) => {
             const v = p.value
@@ -645,7 +645,7 @@ const option = computed(() => {
       name: activeKey,
       type: 'line',
       data: alignedCpkData,
-      lineStyle: { width: 2.5, color: '#3b82f6' },
+      lineStyle: { width: 2.5, color: '#f59e0b' },
       markLine: { silent: true, symbol: 'none', data: mlData },
       markArea: { silent: true, data: finalMarkAreas }
     },
@@ -680,7 +680,7 @@ const option = computed(() => {
       name: activeKey,
       type: 'line',
       data: alignedCpkData,
-      lineStyle: { width: 2.5, color: '#3b82f6' },
+      lineStyle: { width: 2.5, color: '#f59e0b' },
       markLine: { silent: true, symbol: 'none', data: mlData },
       markArea: { silent: true, data: finalMarkAreas }
     },
@@ -721,7 +721,7 @@ const option = computed(() => {
       name: activeKey,
       type: 'line',
       data: alignedCpkData,
-      lineStyle: { width: 2.5, color: '#3b82f6' },
+      lineStyle: { width: 2.5, color: '#f59e0b' },
       markLine: { silent: true, symbol: 'none', data: mlData },
       markArea: { silent: true, data: finalMarkAreas }
     },
@@ -788,18 +788,82 @@ const option = computed(() => {
       textStyle: { color: '#0d1117', fontSize: 12 },
       formatter(params) {
         const date = params[0]?.axisValue ?? ''
-        let html = `<div style="font-weight:600;margin-bottom:6px">${date}</div>`
-        params.forEach(p => {
-          if (p.seriesName.includes('正常区间') || p.seriesName.includes('稳定区间') || p.seriesName.includes('超出公差') || p.seriesName.includes('区间') || p.seriesName.includes('下限')) return
-          if (p.value === undefined || p.value === null || (Array.isArray(p.value) && p.value.length === 0)) return
-          
-          const color = p.color?.colorStops?.[0]?.color ?? p.color
-          const valueText = typeof p.value === 'number' ? (props.indicator === 'weight' ? p.value.toFixed(4) + '%' : p.value.toFixed(4)) : p.value
-          html += `<div style="display:flex;justify-content:space-between;gap:16px">
-            <span><span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:2px;margin-right:5px"></span>${p.seriesName}</span>
-            <span style="font-weight:600;font-variant-numeric:tabular-nums">${valueText}</span>
-          </div>`
-        })
+        const stats = props.cpkData?.stats_by_date?.[date]
+        const indKey = props.indicator || 'rfpp'
+        const curIndStat = stats ? stats[indKey] : null
+        
+        let html = `
+          <div style="padding: 2px 4px; min-width: 195px;">
+            <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+              <span>${date}</span>
+            </div>
+        `
+        
+        if (curIndStat) {
+          const totalN = stats.total_n !== undefined && stats.total_n !== null ? Number(stats.total_n).toLocaleString() : '-'
+          const cpkVal = curIndStat.cpk !== undefined && curIndStat.cpk !== null
+            ? (props.indicator === 'weight' ? (curIndStat.cpk > 0 ? '+' : '') + curIndStat.cpk.toFixed(2) + '%' : curIndStat.cpk.toFixed(4))
+            : '-'
+          const meanVal = curIndStat.mean !== undefined && curIndStat.mean !== null
+            ? (props.indicator === 'weight' ? (curIndStat.mean > 0 ? '+' : '') + curIndStat.mean.toFixed(2) + '%' : curIndStat.mean.toFixed(3))
+            : '-'
+          const stdVal = curIndStat.std !== undefined && curIndStat.std !== null ? curIndStat.std.toFixed(3) : '-'
+
+          const cpkLabel = props.indicator === 'weight' ? '生产偏差率' : '加权 CPK'
+
+          const outliersCnt = curIndStat.outliers !== undefined && curIndStat.outliers !== null ? curIndStat.outliers : null
+          const rawTotalN = stats.total_n !== undefined && stats.total_n !== null ? Number(stats.total_n) : 0
+          const outlierText = outliersCnt !== null
+            ? `${outliersCnt} 条 (${rawTotalN > 0 ? ((outliersCnt / rawTotalN) * 100).toFixed(2) + '%' : '0%'})`
+            : null
+
+          let outlierRowHtml = ''
+          if (outlierText !== null) {
+            const outlierColor = outliersCnt > 0 ? '#9333ea' : '#16a34a'
+            outlierRowHtml = `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #64748b;">异常值:</span>
+                <span style="font-weight: 700; color: ${outlierColor}; font-family: 'JetBrains Mono', monospace;">${outlierText}</span>
+              </div>
+            `
+          }
+
+          html += `
+            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #64748b;">当天产量:</span>
+                <span style="font-weight: 700; color: #0f172a; font-family: 'JetBrains Mono', monospace;">${totalN} 条</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #64748b;">${cpkLabel}:</span>
+                <span style="font-weight: 700; color: #2563eb; font-family: 'JetBrains Mono', monospace;">${cpkVal}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #64748b;">均值 (μ):</span>
+                <span style="font-weight: 600; color: #16a34a; font-family: 'JetBrains Mono', monospace;">${meanVal}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #64748b;">标准差 (σ):</span>
+                <span style="font-weight: 600; color: #d97706; font-family: 'JetBrains Mono', monospace;">${stdVal}</span>
+              </div>
+              ${outlierRowHtml}
+            </div>
+          `
+        } else {
+          params.forEach(p => {
+            if (p.seriesName.includes('正常区间') || p.seriesName.includes('稳定区间') || p.seriesName.includes('超出公差') || p.seriesName.includes('区间') || p.seriesName.includes('下限')) return
+            if (p.value === undefined || p.value === null || (Array.isArray(p.value) && p.value.length === 0)) return
+            
+            const color = p.color?.colorStops?.[0]?.color ?? p.color
+            const valueText = typeof p.value === 'number' ? (props.indicator === 'weight' ? p.value.toFixed(4) + '%' : p.value.toFixed(4)) : p.value
+            html += `<div style="display:flex;justify-content:space-between;gap:16px;margin-top:4px;">
+              <span><span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:2px;margin-right:5px"></span>${p.seriesName}</span>
+              <span style="font-weight:600;font-variant-numeric:tabular-nums">${valueText}</span>
+            </div>`
+          })
+        }
+        
+        html += `</div>`
         return html
       },
     },

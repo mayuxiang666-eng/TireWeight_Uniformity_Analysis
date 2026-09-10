@@ -1,42 +1,34 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
-import subprocess
 
-# 强制系统输出使用 UTF-8 编码，防止 Windows NSSM 服务 cp1252 编码抛出 UnicodeEncodeError
+# Ensure UTF-8 output across all Windows consoles and NSSM service sessions
+os.environ["PYTHONIOENCODING"] = "utf-8"
 try:
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
 
+# Ensure project root is always in sys.path
+CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(CURR_DIR).lower() == "backend":
+    ROOT_DIR = os.path.dirname(CURR_DIR)
+else:
+    ROOT_DIR = CURR_DIR
 
-# 1. 自动检查并安装 Python 生产依赖包
-REQUIRED_PACKAGES = ["fastapi", "uvicorn", "duckdb", "pandas", "sklearn", "psycopg2", "pyarrow"]
-
-def ensure_dependencies():
-    missing = []
-    for pkg in REQUIRED_PACKAGES:
-        try:
-            __import__(pkg)
-        except ImportError:
-            missing.append(pkg)
-            
-    if missing:
-        print(f"[Notice] 检测到缺少依赖包 {missing}，正在自动为您安装...")
-        req_file = os.path.join(os.path.dirname(__file__), "requirements.txt")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file])
-            print("[SUCCESS] 依赖包安装完成！")
-        except Exception as e:
-            print(f"[Warn] pip 默认安装失败，尝试以 --user 方式安装: {e}")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file, "--user"])
-
-ensure_dependencies()
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 import uvicorn
 
 if __name__ == "__main__":
-    # 在生产部署环境中设置 reload=False 避免多进程 Spawn 时的加载死锁
-    print("正在启动 FastAPI 后端服务 (端口 8000)...")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    is_service = os.environ.get("NSSM_SERVICE", "0") == "1"
+    # When running interactively in local dev, reload defaults to True;
+    # When running under NSSM production service, reload defaults to False (restart handled cleanly by NSSM)
+    reload_env = os.environ.get("FASTAPI_RELOAD", "0" if is_service else "1")
+    should_reload = reload_env.lower() in ("1", "true", "yes")
+
+    print(f"[INFO] Starting FastAPI backend on 0.0.0.0:8000 (reload={should_reload}, service={is_service})...")
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=should_reload)

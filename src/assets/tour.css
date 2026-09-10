@@ -1,0 +1,190 @@
+/* ==========================================================================
+   看板交互式漫游新手引导样式定制 (Driver.js Theme & Ripple Animations)
+   ========================================================================== */
+
+/* 1. 遮罩层深度调优 (确保 SVG 容器本身绝对透明，仅由内部 path 渲染半透明遮罩与镂空) */
+.driver-overlay {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* 2. 聚光灯镂空框边缘高光与平滑过渡 */
+.driver-overlay path {
+  transition: opacity 0.3s ease !important;
+}
+
+/* 3. 目标元素呼吸脉冲光环 (动态提示点击与关注) */
+@keyframes tour-pulse-halo {
+  0% {
+    outline: 2px solid rgba(59, 130, 246, 0.8);
+    outline-offset: 2px;
+  }
+  50% {
+    outline: 4px solid rgba(59, 130, 246, 0.2);
+    outline-offset: 6px;
+  }
+  100% {
+    outline: 2px solid rgba(59, 130, 246, 0.8);
+    outline-offset: 2px;
+  }
+}
+
+.driver-active-element {
+  animation: tour-pulse-halo 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
+/* 4. 现代悬浮卡片气泡 (Popover) */
+.driver-popover {
+  z-index: 2147483647 !important;
+  opacity: 1 !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-radius: 14px !important;
+  padding: 18px 20px !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  box-shadow: 0 20px 30px -10px rgba(15, 23, 42, 0.18), 0 10px 15px -3px rgba(15, 23, 42, 0.08) !important;
+  max-width: 380px !important;
+  min-width: 300px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif !important;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* 5. 气泡小箭头 */
+.driver-popover-arrow {
+  border-color: #ffffff !important;
+}
+
+/* 6. 标题样式与徽章感 */
+.driver-popover-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  line-height: 1.4 !important;
+  margin-bottom: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  letter-spacing: 0.1px !important;
+}
+
+/* 7. 正文内容排版 */
+.driver-popover-description {
+  font-size: 13px !important;
+  line-height: 1.65 !important;
+  color: #475569 !important;
+  margin-bottom: 16px !important;
+  font-weight: 400 !important;
+}
+
+/* 8. 底部操作栏 */
+.driver-popover-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-top: 12px !important;
+  padding-top: 12px !important;
+  border-top: 1px solid #f1f5f9 !important;
+}
+
+/* 步骤进度指示器 */
+.driver-popover-progress-text {
+  font-family: "JetBrains Mono", Menlo, monospace !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  padding: 3px 10px !important;
+  border-radius: 20px !important;
+}
+
+/* 按钮统一通用样式 */
+.driver-popover-navigation-btns {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+/* “上一步” 幽灵按钮 */
+.driver-popover-prev-btn {
+  background: transparent !important;
+  color: #64748b !important;
+  border: 1px solid #e2e8f0 !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  padding: 6px 13px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.driver-popover-prev-btn:hover {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* “下一步” / “完成” 科技蓝渐变主按钮 */
+.driver-popover-next-btn {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  padding: 6px 16px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+  transition: all 0.2s ease !important;
+}
+
+.driver-popover-next-btn:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45) !important;
+  filter: brightness(1.06) !important;
+}
+
+/* 关闭 (跳过) 小叉叉按钮 */
+.driver-popover-close-btn {
+  color: #94a3b8 !important;
+  font-size: 16px !important;
+  transition: color 0.2s ease !important;
+}
+
+.driver-popover-close-btn:hover {
+  color: #334155 !important;
+}
+
+/* 顶栏“使用指南”按钮样式微调 (用于 App.vue) */
+.tour-trigger-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.tour-trigger-pill:hover {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.18);
+  border-color: #93c5fd;
+}
+
+.tour-trigger-pill:active {
+  transform: translateY(0);
+}
+
+.tour-trigger-icon {
+  font-size: 14px;
+}

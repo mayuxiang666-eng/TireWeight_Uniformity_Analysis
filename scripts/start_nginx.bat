@@ -25,14 +25,18 @@ if not exist "%NGINX_DIR%\nginx.exe" (
 
 copy /Y "%ROOT_DIR%\scripts\nginx.conf" "%NGINX_DIR%\conf\nginx.conf" >nul 2>&1
 
-cd /d "%NGINX_DIR%"
-nginx.exe -s stop >nul 2>&1
+pushd "%NGINX_DIR%"
+"%NGINX_DIR%\nginx.exe" -s stop >nul 2>&1
 taskkill /F /IM nginx.exe >nul 2>&1
 
-echo Starting Nginx with TireWeight Uniformity Analysis config...
-start "" nginx.exe -c "%ROOT_DIR%\scripts\nginx.conf"
+echo Checking Nginx configuration syntax...
+"%NGINX_DIR%\nginx.exe" -p "%NGINX_DIR%" -t -c "%ROOT_DIR%\scripts\nginx.conf"
 
-timeout /t 2 >nul
+echo Starting Nginx with TireWeight Uniformity Analysis config...
+start "" "%NGINX_DIR%\nginx.exe" -p "%NGINX_DIR%" -c "%ROOT_DIR%\scripts\nginx.conf"
+popd
+
+timeout /t 3 >nul
 netstat -aon | findstr ":8088 " | findstr "LISTENING"
 if %errorlevel% equ 0 (
     echo.
@@ -43,6 +47,11 @@ if %errorlevel% equ 0 (
 ) else (
     echo.
     echo [WARN] Could not find listener on Port 8088 yet.
+    if exist "%NGINX_DIR%\logs\error.log" (
+        echo [Recent Nginx Error Logs]:
+        powershell -Command "Get-Content '%NGINX_DIR%\logs\error.log' -Tail 10"
+    )
 )
 echo.
 pause
+

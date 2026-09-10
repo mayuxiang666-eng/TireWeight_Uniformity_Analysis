@@ -1,0 +1,7 @@
+{
+    "last_fetch_timestamp": "2026-08-13",
+    "last_success_time": "2026-08-13 14:34:00",
+    "mode": "incremental",
+    "rows_fetched": 1487614,
+    "total_rows_in_parquet": 1487614
+}

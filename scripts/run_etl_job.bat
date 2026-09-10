@@ -10,6 +10,7 @@ cd /d "D:\TU AI\TireWeight_Uniformity_Analysis"
 :: 2. Set UTF-8 environment
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
+set PYTHONUNBUFFERED=1
 
 :: 3. Find Python absolute path
 set PYTHON_EXE=C:\Users\uif45510\AppData\Local\Programs\Python\Python313\python.exe
@@ -29,10 +30,11 @@ echo. >> logs\etl\etl.log
 echo =================================================== >> logs\etl\etl.log
 echo [%date% %time%] Starting ETL Pipeline... >> logs\etl\etl.log
 
-:: 6. Run Python ETL pipeline directly to show LIVE REAL-TIME output on console
-"%PYTHON_EXE%" -m backend.etl.run_pipeline
+:: 6. Run Python ETL pipeline and log all output
+"%PYTHON_EXE%" -u -m backend.etl.run_pipeline >> logs\etl\etl.log 2>&1
+set EXIT_CODE=%errorlevel%
 
-echo [%date% %time%] ETL Pipeline finished with exit code: %errorlevel% >> logs\etl\etl.log
+echo [%date% %time%] ETL Pipeline finished with exit code: %EXIT_CODE% >> logs\etl\etl.log
 echo =================================================== >> logs\etl\etl.log
 
 echo.
@@ -40,4 +42,4 @@ echo ===================================================
 echo [SUCCESS] ETL Pipeline execution completed!
 echo Log file appended to logs\etl\etl.log
 echo ===================================================
-pause
+exit /b %EXIT_CODE%

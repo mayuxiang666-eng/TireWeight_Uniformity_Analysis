@@ -1,24 +1,59 @@
 @echo off
-:: TireWeight_Uniformity_Analysis Start Services Script
-echo Starting TireWeight_Uniformity_Analysis Services...
-
-set ROOT_DIR=%~dp0..
-cd /d "%ROOT_DIR%"
-
-set PYTHON_CMD=python
-if exist "%ROOT_DIR%\.venv\Scripts\python.exe" (
-    set PYTHON_CMD="%ROOT_DIR%\.venv\Scripts\python.exe"
-) else if exist "C:\Users\uif77331\Desktop\111\111.venv\Scripts\python.exe" (
-    set PYTHON_CMD="C:\Users\uif77331\Desktop\111\111.venv\Scripts\python.exe"
+:: Auto Elevate to Administrator
+>nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
+if '%errorlevel%' NEQ '0' (
+    echo Requesting Administrator Privileges...
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
 )
 
-echo [1/2] Starting Unified FastAPI Backend & Frontend Web Service (Port 8000)...
-start "Backend_API_Port8000" %PYTHON_CMD% backend\run_server.py
-
-echo [2/2] Starting ETL Scheduler Daemon (Every 30 Minutes)...
-start "ETL_Scheduler_30Min" %PYTHON_CMD% -m backend.etl.scheduler --interval 30
-
-echo.
-echo [SUCCESS] All Production Services Launched!
-echo Web UI & API: http://127.0.0.1:8000
+title Start TireWeight Uniformity Analysis Services
 echo ===================================================
+echo   Starting TireWeight Uniformity Analysis Services
+echo ===================================================
+
+set ROOT_DIR=D:\TU AI\TireWeight_Uniformity_Analysis
+if not exist "%ROOT_DIR%" (
+    set ROOT_DIR=%~dp0..
+)
+cd /d "%ROOT_DIR%"
+
+set NSSM_EXE="%ROOT_DIR%\scripts\nssm.exe"
+
+echo [1/2] Starting / Verifying FastAPI Backend (Port 8000)...
+if exist %NSSM_EXE% (
+    %NSSM_EXE% start FastAPI-Service >nul 2>&1
+)
+net start FastAPI-Service >nul 2>&1
+
+timeout /t 2 /nobreak >nul
+netstat -ano | findstr ":8000 " | findstr "LISTENING" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Standalone Python launching on Port 8000...
+    powershell -Command "$conns = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue; foreach ($c in $conns) { $p = $c.OwningProcess; if ($p -gt 0) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } }"
+    start "FastAPI_Port8000" python run_server.py
+)
+
+echo [2/2] Starting / Verifying Nginx Frontend (Port 8088)...
+if exist %NSSM_EXE% (
+    %NSSM_EXE% start Nginx-Service >nul 2>&1
+)
+net start Nginx-Service >nul 2>&1
+
+timeout /t 2 /nobreak >nul
+netstat -ano | findstr ":8088 " | findstr "LISTENING" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Standalone Nginx launching on Port 8088...
+    if exist "%ROOT_DIR%\scripts\start_nginx.bat" (
+        call "%ROOT_DIR%\scripts\start_nginx.bat"
+    )
+)
+
+timeout /t 2 /nobreak >nul
+echo.
+echo ===================================================
+echo [SUCCESS] Services Checked!
+echo Frontend Web UI: http://10.246.97.159:8088
+echo Backend API:     http://10.246.97.159:8000
+echo ===================================================
+timeout /t 3

@@ -48,6 +48,8 @@ ENV/
 __screenshots__/
 
 # ETL Data & Credentials
+*.parquet
+**/*.parquet
 backend/data/*.parquet
 backend/config/db_config.json
 backend/config/secret.key

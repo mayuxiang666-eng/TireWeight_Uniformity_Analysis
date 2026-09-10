@@ -26,7 +26,20 @@ def _module_exists(pkg):
 
 ensure_dependencies()
 
-from backend.etl.run_pipeline import run_full_pipeline
+etl_dir = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.dirname(etl_dir)
+root_dir = os.path.dirname(backend_dir)
+for p in [etl_dir, backend_dir, root_dir]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+try:
+    from run_pipeline import run_full_pipeline
+except ModuleNotFoundError:
+    try:
+        from etl.run_pipeline import run_full_pipeline
+    except ModuleNotFoundError:
+        from backend.etl.run_pipeline import run_full_pipeline
 
 def start_scheduler(interval_minutes=30, run_immediately=True):
     interval_seconds = interval_minutes * 60

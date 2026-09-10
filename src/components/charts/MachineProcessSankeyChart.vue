@@ -8,18 +8,29 @@
       <span>{{ error }}</span>
     </div>
     <div v-else-if="!sankeyData || !sankeyData.nodes || sankeyData.nodes.length === 0" class="sankey-empty" style="height: 100%; display: flex; align-items: center; justify-content: center; color: #8c959f; font-size: 13px;">
-      <el-empty description="当前规格无工序流转路径数据" :image-size="60" />
+      <el-empty :description="sankeyEmptyDescription" :image-size="60" />
     </div>
     <template v-else>
       <div style="display: flex; flex-direction: column; height: 100%;">
-        <div class="path-notice" style="flex-shrink: 0; margin-bottom: 6px; font-size: 12px; background: #fff7ed; padding: 6px 12px; border-radius: 4px; border: 1px solid #ffedd5; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <span style="font-weight: 600; color: #475569;">🎨 节点颜色对应不同工段，{{ props.indicator === 'weight' ? '色深代表偏差严重程度' : '色深代表 CPK 严重程度' }}</span>
-            <span style="font-weight: 600; color: #dc2626;">🔴 红色发光节点：全局核心负贡献机台</span>
+        <div class="path-notice" style="flex-shrink: 0; margin-bottom: 6px; font-size: 12px; background: #fff7ed; padding: 6px 12px; border-radius: 4px; border: 1px solid #ffedd5; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+            <span style="font-weight: 600; color: #475569;">灰色节点：正常流转机台</span>
+            <span style="font-weight: 600; color: #dc2626; display: inline-flex; align-items: center; gap: 4px;">
+              红色发光节点：全局核心负贡献报警机台（依据全局影响度判定：影响度 = 贡献度 × 产量平方根平滑占比，负向绝对值越大拉低越严重）
+              <el-tooltip placement="top" raw-content>
+                <template #content>
+                  <div style="max-width: 330px; font-size: 12px; line-height: 1.6; padding: 4px;">
+                    <strong style="color: #ef4444;">全局核心负贡献机台判定机理：</strong><br/>
+                    1. <strong>对照基准设定</strong>：控制上下游其他工序机台不变，提取流经该工序其他机台的替代路径综合 CPK 作为对照基准；<br/>
+                    2. <strong>机台独立偏离</strong>：<code>贡献度 = 机台实际CPK - 替代对照基准CPK</code>；<br/>
+                    3. <strong>全局影响度</strong>：<code>全局影响度 = 贡献度 × 产量平方根平滑占比 (sqrt(N)/sum(sqrt(N)))</code>；<br/>
+                    4. <strong>预警判定</strong>：影响度为负且绝对值最大的机台即为全场拉低质量的核心瓶颈设备，系统自动触发红色发光投影高亮。
+                  </div>
+                </template>
+                <el-icon style="cursor: pointer; color: #dc2626; font-size: 13px;"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
           </div>
-          <el-button size="small" class="zoom-btn" :icon="ZoomIn" style="margin-left: 8px;" @click="dialogVisible = true">
-            放大查看
-          </el-button>
         </div>
         <v-chart
           :option="option"
@@ -33,7 +44,7 @@
     <!-- 放大全屏查看弹窗 -->
     <el-dialog
       v-model="dialogVisible"
-      title="🔍 5列生产工序流转桑基图 - 放大全屏分析"
+      title="生产工序流转桑基图 - 放大全屏分析"
       width="92%"
       top="4vh"
       destroy-on-close
@@ -58,7 +69,8 @@ import { use } from 'echarts/core'
 import { SankeyChart } from 'echarts/charts'
 import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { Loading, ZoomIn } from '@element-plus/icons-vue'
+import { Loading, ZoomIn, QuestionFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 use([SankeyChart, TooltipComponent, CanvasRenderer])
 
@@ -67,18 +79,26 @@ const props = defineProps({
   loading:    { type: Boolean, default: false },
   error:      { type: String, default: null },
   indicator:  { type: String, default: 'rfpp' },
-  tolerance:  { type: Number, default: 0.8 }
+  tolerance:  { type: Number, default: 0.8 },
+  article:    { type: String, default: '' }
 })
 
-const emit = defineEmits(['click-node'])
+const emit = defineEmits(['open-cgrs'])
 
 const dialogVisible = ref(false)
 
+const sankeyEmptyDescription = computed(() => {
+  if (props.sankeyData && props.sankeyData.empty_message) {
+    return props.sankeyData.empty_message
+  }
+  return '当前规格无工序流转路径数据'
+})
+
 const sankeyPrefixToCol = {
   "胎面": "tread_workcenter",
-  "胎圈": "bead_workcenter",
-  "内衬": "inner_liner_workcenter",
   "胎侧": "sidewall_workcenter",
+  "内衬": "inner_liner_workcenter",
+  "胎圈": "bead_workcenter",
   "带束层1": "first_breaker_workcenter",
   "带束层2": "second_breaker_workcenter",
   "帘布层1": "first_ply_workcenter",
@@ -95,11 +115,24 @@ function onChartClick(params) {
   if (params && params.dataType === 'node') {
     const parts = params.name.split('_')
     const prefix = parts[0]
-    const machine = parts[1]
+    const machine = parts.length > 1 ? parts.slice(1).join('_') : parts[0]
     const workcenterCol = sankeyPrefixToCol[prefix]
-    if (machine && workcenterCol) {
-      emit('click-node', { machine, workcenterCol })
+    
+    // 成型工段 (GT) 或 硫化工段 (CT) 触发 CGRS 弹窗
+    if (
+      prefix.includes('成型') || prefix.includes('GT') || prefix.includes('硫化') || prefix.includes('CT') ||
+      (workcenterCol && (workcenterCol.includes('gt_workcenter') || workcenterCol.includes('ct_workcenter')))
+    ) {
+      emit('open-cgrs', {
+        machine,
+        stage: prefix,
+        article: props.article,
+        indicator: props.indicator,
+        topWarningMachines: props.sankeyData?.top_warning_machines || []
+      })
       dialogVisible.value = false
+    } else {
+      ElMessage.info(`CGRS 参数修改记录仅支持成型与硫化工段设备 (当前点击: ${prefix} - ${machine})`)
     }
   }
 }
@@ -139,30 +172,25 @@ const option = computed(() => {
     }
   }
 
-  // 节点颜色生成函数：
-  // 1. 如果该 workcenter 只有一台机器，则使用统一的灰色 (#cbd5e1)
-  // 2. 如果有多个机台，则使用明亮鲜艳的高饱和度配色，根据 CPK 局域相对位置自适应映射深浅
   function getNodeColor(prefix, cpk) {
-    // 单机台工段，统一使用中灰色标记
     if (prefixMachineCounts[prefix] === 1) {
       return '#cbd5e1'
     }
 
-    // 各多机台工段基础色相 Hue (H) - 对应一组高明度亮色系 (完全排除 310-360 以及 0-20 的红粉色范围)
     const baseHues = {
-      "胎面": 217,        // 亮蓝
-      "胎侧": 190,        // 湖蓝/青绿
-      "内衬": 174,        // 亮青
-      "胎圈": 45,         // 金黄
-      "帘布层1": 262,      // 亮紫
-      "带束层1": 239,      // 靛蓝
-      "带束层2": 205,      // 天蓝
-      "冠带层1": 280,      // 罗兰紫
-      "冠带层2": 220,      // 灰蓝
-      "生胎成型GT": 250,    // 蓝紫
-      "硫化CT": 35,        // 暖橙
-      "终检TU": 228,       // 皇家蓝
-      "动平衡TB": 30        // 浅橙褐/古铜
+      "胎面": 217,
+      "胎侧": 190,
+      "内衬": 174,
+      "胎圈": 45,
+      "帘布层1": 262,
+      "带束层1": 239,
+      "带束层2": 205,
+      "冠带层1": 280,
+      "冠带层2": 220,
+      "生胎成型GT": 250,
+      "硫化CT": 35,
+      "终检TU": 228,
+      "动平衡TB": 30
     }
 
     const h = baseHues[prefix] ?? 217
@@ -178,7 +206,6 @@ const option = computed(() => {
       }
     }
 
-    // 采用高饱和度 (80% - 90%)，亮度在 45% 到 80% 之间映射
     const s = 85
     const l = Math.round(80 - ratio * 35)
     return `hsl(${h}, ${s}%, ${l}%)`
@@ -186,9 +213,8 @@ const option = computed(() => {
 
   const nodes = props.sankeyData.nodes.map(n => {
     const prefix = n.name.split("_")[0]
-    // 动平衡TB 需要在 TU 之后单独一层深度展示
     const adjustedDepth = (prefix === '动平衡TB') ? n.depth + 1 : n.depth
-    const nodeColor = getNodeColor(prefix, n.spec_cpk)
+    const nodeColor = n.is_warning_machine ? '#ef4444' : '#94a3b8'
     
     const itemStyle = {
       color: nodeColor,
@@ -196,10 +222,9 @@ const option = computed(() => {
       borderWidth: 0
     }
 
-    // 全局核心负贡献节点，添加红色霓虹外发光投影特效
     if (n.is_warning_machine) {
       itemStyle.shadowColor = 'rgba(239, 68, 68, 0.95)'
-      itemStyle.shadowBlur = 12
+      itemStyle.shadowBlur = 14
       itemStyle.shadowOffsetX = 0
       itemStyle.shadowOffsetY = 0
     }
@@ -209,28 +234,23 @@ const option = computed(() => {
       depth: adjustedDepth,
       is_warning_machine: n.is_warning_machine,
       spec_cpk: n.spec_cpk,
+      spec_std: n.spec_std,
       spec_ratio: n.spec_ratio,
       spec_avg: n.spec_avg,
+      cgrs_comparison: n.cgrs_comparison,
       itemStyle: itemStyle
     }
   })
 
-  // 根据 depth 和自定义的工段顺序进行排序，使相同 workcenter 的节点聚集排列在一起
   const sortedNodes = [...nodes].sort((a, b) => {
     if (a.depth !== b.depth) return a.depth - b.depth
     
     const wcOrder = {
-      // Depth 0
       "胎面": 1, "胎侧": 2, "内衬": 3, "胎圈": 4,
-      // Depth 1
       "带束层1": 1, "带束层2": 2, "帘布层1": 3, "冠带层1": 4, "冠带层2": 5,
-      // Depth 2
       "生胎成型GT": 1,
-      // Depth 3
       "硫化CT": 1,
-      // Depth 4
       "终检TU": 1,
-      // Depth 5 (动平衡TB placed after TU)
       "动平衡TB": 1
     }
     
@@ -262,27 +282,126 @@ const option = computed(() => {
       trigger: 'item',
       triggerOn: 'mousemove',
       backgroundColor: '#fff',
-      borderColor: '#e5e8ef',
+      borderColor: '#e2e8f0',
       borderWidth: 1,
+      padding: [10, 14],
+      extraCssText: 'box-shadow: 0 6px 16px rgba(0,0,0,0.1); border-radius: 8px; max-width: 380px;',
       formatter(params) {
         if (params.dataType === 'node') {
           const cpk = params.data.spec_cpk
-          const warnText = params.data.is_warning_machine ? ' <span style="color:#ef4444;font-weight:bold;">[全局核心负贡献]</span>' : ''
+          const std = params.data.spec_std
+          const avg = params.data.spec_avg
+          const cgrs = params.data.cgrs_comparison
+          const warnText = params.data.is_warning_machine ? ' <span style="color:#ef4444;font-weight:bold;margin-left:6px;">[全局核心负贡献]</span>' : ''
+          
+          let cgrsHtml = ''
+          if (cgrs && cgrs.has_cgrs) {
+            const evList = cgrs.events_summary || []
+            let evItemsHtml = ''
+            if (evList.length > 0) {
+              evItemsHtml = evList.map(ev => {
+                const timeOnly = ev.time_str ? (ev.time_str.split(' ')[1] || ev.time_str) : ''
+                if (ev.is_disabled || ev.valid_paths_count === 0) {
+                  return `
+                    <div style="background: #f8fafc; border-radius: 5px; padding: 6px 8px; margin-bottom: 5px; border: 1px solid #e2e8f0; opacity: 0.85;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 3px;">
+                        <span style="font-weight: 700; color: #64748b;">第 ${ev.event_num} 次修改 <span style="font-weight: normal; color: #94a3b8; font-size: 10px;">(${timeOnly})</span></span>
+                        <span style="font-weight: 600; color: #94a3b8; font-size: 10px;">无有效对比路径</span>
+                      </div>
+                      <div style="color: #94a3b8; font-size: 10.5px; margin-bottom: 3px;">
+                        变更参数: <span style="color:#64748b;">${ev.params}</span>
+                      </div>
+                      <div style="color: #94a3b8; font-size: 10px; background: #f1f5f9; padding: 3px 6px; border-radius: 4px; text-align: center;">
+                        单侧样本 &lt; 5 胎 或 路径样本差 &gt; 2.5 倍
+                      </div>
+                    </div>
+                  `
+                }
+                const isPos = (ev.yoy_pct || 0) >= 0
+                const yoyColor = isPos ? '#059669' : '#dc2626'
+                const yoySign = isPos ? '+' : ''
+                return `
+                  <div style="background: #ffffff; border-radius: 5px; padding: 6px 8px; margin-bottom: 5px; border: 1px solid #fed7aa;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 3px;">
+                      <span style="font-weight: 700; color: #78350f;">第 ${ev.event_num} 次修改 <span style="font-weight: normal; color: #94a3b8; font-size: 10px;">(${timeOnly})</span></span>
+                      <span style="font-weight: 700; color: ${yoyColor};">CPK 增幅: ${yoySign}${Number(ev.yoy_pct || 0).toFixed(2)}%</span>
+                    </div>
+                    <div style="color: #475569; font-size: 10.5px; margin-bottom: 3px;">
+                      变更参数: <span style="color:#0369a1; font-weight: 600;">${ev.params}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; color: #334155; font-size: 10.5px; background: #f8fafc; padding: 3px 6px; border-radius: 4px;">
+                      <span>改前 CPK: <strong>${ev.cpk_before}</strong> (N=${ev.n_before})</span>
+                      <span style="color:#f59e0b; font-weight: bold;">➔</span>
+                      <span>改后 CPK: <strong>${ev.cpk_after}</strong> (N=${ev.n_after})</span>
+                    </div>
+                  </div>
+                `
+              }).join('')
+            } else {
+              const isPos = cgrs.latest_yoy_pct >= 0
+              const yoyColor = isPos ? '#059669' : '#dc2626'
+              const yoySign = isPos ? '+' : ''
+              const paramListStr = (cgrs.latest_params && cgrs.latest_params.length > 0) ? cgrs.latest_params.slice(0, 3).join(', ') + (cgrs.latest_params.length > 3 ? '...' : '') : '参数调整'
+              evItemsHtml = `
+                <div style="background: #ffffff; border-radius: 5px; padding: 6px 8px; margin-bottom: 5px; border: 1px solid #fed7aa;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 3px;">
+                    <span style="font-weight: 700; color: #78350f;">最新修改 (${cgrs.latest_event_time})</span>
+                    <span style="font-weight: 700; color: ${yoyColor};">CPK 增幅: ${yoySign}${cgrs.latest_yoy_pct.toFixed(2)}%</span>
+                  </div>
+                  <div style="color: #475569; font-size: 10.5px; margin-bottom: 3px;">
+                    变更参数: <span style="color:#0369a1; font-weight: 600;">${paramListStr}</span>
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; color: #334155; font-size: 10.5px; background: #f8fafc; padding: 3px 6px; border-radius: 4px;">
+                    <span>改前 CPK: <strong>${cgrs.latest_cpk_before}</strong> (N=${cgrs.latest_n_before})</span>
+                    <span style="color:#f59e0b; font-weight: bold;">➔</span>
+                    <span>改后 CPK: <strong>${cgrs.latest_cpk_after}</strong> (N=${cgrs.latest_n_after})</span>
+                  </div>
+                </div>
+              `
+            }
+
+            cgrsHtml = `
+              <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <span style="font-weight: 700; color: #b45309; font-size: 11.5px; display: inline-flex; align-items: center; gap: 3px;">
+                    ⚙️ CGRS 调参前后对比
+                  </span>
+                  <span style="font-size: 10.5px; color: #64748b;">当天共 ${cgrs.events_count || 1} 次调参</span>
+                </div>
+                <div style="background: #fffbeb; border-radius: 6px; padding: 6px 8px; border: 1px solid #fef3c7;">
+                  ${evItemsHtml}
+                </div>
+              </div>
+            `
+          }
+
           if (props.indicator === 'weight') {
-            const avgPct = params.data.spec_ratio
-            const meanVal = params.data.spec_avg
+            const avgPct = params.data.spec_ratio ?? cpk
+            const meanVal = avg
             const avgPctStr = avgPct !== undefined && avgPct !== null ? (avgPct > 0 ? '+' : '') + avgPct.toFixed(2) + '%' : '暂无数据'
+            const stdStr = std !== undefined && std !== null ? std.toFixed(2) + '%' : '暂无数据'
             const meanStr = meanVal !== undefined && meanVal !== null ? (meanVal > 0 ? '+' : '') + meanVal.toFixed(3) + ' kg' : '暂无数据'
             return `
-              <div style="font-weight:bold;margin-bottom:4px">${params.name}${warnText}</div>
-              <div style="font-size:11px;color:#64748b;">偏差率: <strong style="color:#2563eb">${avgPctStr}</strong></div>
-              <div style="font-size:11px;color:#64748b;">物理均值差: <strong style="color:#10b981">${meanStr}</strong></div>
+              <div style="font-weight:bold;font-size:13px;margin-bottom:6px;color:#1e293b;border-bottom:1px solid #f1f5f9;padding-bottom:4px;">${params.name}${warnText}</div>
+              <div style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:#475569;">
+                <div>偏差率: <strong style="color:#2563eb;">${avgPctStr}</strong></div>
+                <div>标准差 (σ): <strong style="color:#10b981;">${stdStr}</strong></div>
+                <div>物理均值差: <strong style="color:#0f172a;">${meanStr}</strong></div>
+              </div>
+              ${cgrsHtml}
             `
           }
           const cpkStr = (cpk !== undefined && cpk !== null) ? cpk.toFixed(2) : '暂无数据'
+          const stdStr = (std !== undefined && std !== null) ? std.toFixed(2) : '暂无数据'
+          const avgStr = (avg !== undefined && avg !== null) ? avg.toFixed(2) : '暂无数据'
           return `
-            <div style="font-weight:bold;margin-bottom:4px">${params.name}${warnText}</div>
-            <div style="font-size:11px;color:#64748b;">单规格 CPK: <strong style="color:#2563eb">${cpkStr}</strong></div>
+            <div style="font-weight:bold;font-size:13px;margin-bottom:6px;color:#1e293b;border-bottom:1px solid #f1f5f9;padding-bottom:4px;">${params.name}${warnText}</div>
+            <div style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:#475569;">
+              <div>单规格 CPK: <strong style="color:#2563eb;">${cpkStr}</strong></div>
+              <div>标准差 (σ): <strong style="color:#10b981;">${stdStr}</strong></div>
+              <div>均值 (μ): <strong style="color:#0f172a;">${avgStr}</strong></div>
+            </div>
+            ${cgrsHtml}
           `
         } else if (params.dataType === 'edge') {
           const l = params.data
@@ -292,15 +411,17 @@ const option = computed(() => {
             const avgPctStr = avgPct !== undefined && avgPct !== null ? (avgPct > 0 ? '+' : '') + avgPct.toFixed(2) + '%' : '暂无数据'
             const meanStr = meanVal !== undefined && meanVal !== null ? (meanVal > 0 ? '+' : '') + meanVal.toFixed(3) + ' kg' : '暂无数据'
             return `
-              <div style="font-weight:bold;margin-bottom:4px">${l.source} ➔ ${l.target}</div>
-              <div style="font-size:11px;color:#64748b;">流转轮胎数 (N): <strong style="color:#2563eb">${l.value}</strong></div>
-              <div style="font-size:11px;color:#64748b;">流转偏差率: <strong style="color:#2563eb">${avgPctStr}</strong></div>
-              <div style="font-size:11px;color:#64748b;">物理均值差: <strong style="color:#10b981">${meanStr}</strong></div>
+              <div style="font-weight:bold;font-size:13px;margin-bottom:6px;color:#1e293b;border-bottom:1px solid #f1f5f9;padding-bottom:4px;">${l.source} ➔ ${l.target}</div>
+              <div style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:#475569;">
+                <div>流转轮胎数 (N): <strong style="color:#2563eb;">${l.value}</strong></div>
+                <div>流转偏差率: <strong style="color:#2563eb;">${avgPctStr}</strong></div>
+                <div>物理均值差: <strong style="color:#10b981;">${meanStr}</strong></div>
+              </div>
             `
           }
           return `
-            <div style="font-weight:bold;margin-bottom:4px">${l.source} ➔ ${l.target}</div>
-            <div>流转轮胎条数 (N): <strong style="color:#2563eb">${l.value}</strong></div>
+            <div style="font-weight:bold;font-size:13px;margin-bottom:6px;color:#1e293b;border-bottom:1px solid #f1f5f9;padding-bottom:4px;">${l.source} ➔ ${l.target}</div>
+            <div style="font-size:12px;color:#475569;">流转轮胎条数 (N): <strong style="color:#2563eb;">${l.value}</strong></div>
           `
         }
       }
@@ -310,11 +431,11 @@ const option = computed(() => {
         type: 'sankey',
         left: 10,
         top: 10,
-        right: 120,
+        right: 140,
         bottom: 10,
-        nodeGap: 24, // 增加垂直间距使布局宽松
+        nodeGap: 24,
         nodeWidth: 16,
-        layoutIterations: 0, // 设为 0 以保证尊重我们自定义的排序（相同 workcenter 的节点聚在一起）
+        layoutIterations: 0,
         data: sortedNodes,
         links: links,
         orient: 'horizontal',
@@ -323,17 +444,59 @@ const option = computed(() => {
           color: '#334155',
           formatter(params) {
             const parts = params.name.split('_')
-            const displayName = parts.length > 1 ? parts[1] : params.name
-            const cpk = params.data.spec_cpk
-            if (cpk !== undefined && cpk !== null) {
-              if (props.indicator === 'weight') {
-                const avgPct = params.data.spec_ratio
-                const sign = avgPct > 0 ? '+' : ''
-                return `${displayName} (${sign}${avgPct.toFixed(2)}%)`
-              }
-              return `${displayName} (CPK: ${cpk.toFixed(2)})`
+            const displayName = (parts.length > 1 ? parts[1] : params.name).toUpperCase()
+            const cpk = params.data?.spec_cpk
+            const std = params.data?.spec_std
+            const avg = params.data?.spec_avg
+            const cgrs = params.data?.cgrs_comparison
+
+            let cgrsBadge = ''
+            if (cgrs && cgrs.has_cgrs) {
+              cgrsBadge = ` {cgrsNotice|⚙ 调参记录}`
             }
-            return displayName
+
+            let suffix = ''
+            if (props.indicator === 'weight') {
+              const avgPct = params.data?.spec_ratio ?? cpk
+              if (avgPct !== undefined && avgPct !== null) {
+                const sign = avgPct > 0 ? '+' : ''
+                const meanText = (avg !== undefined && avg !== null) ? ` μ: ${(avg > 0 ? '+' : '')}${avg.toFixed(2)}` : ''
+                const stdText = (std !== undefined && std !== null) ? ` σ: ${std.toFixed(2)}` : ''
+                suffix = `  {info|[ 偏离: ${sign}${avgPct.toFixed(2)}%${meanText}${stdText} ]}`
+              }
+            } else {
+              if (cpk !== undefined && cpk !== null) {
+                const avgText = (avg !== undefined && avg !== null) ? ` μ: ${avg.toFixed(2)}` : ''
+                const stdText = (std !== undefined && std !== null) ? ` σ: ${std.toFixed(2)}` : ''
+                suffix = `  {info|[ CPK: ${cpk.toFixed(2)}${avgText}${stdText} ]}`
+              } else if (avg !== undefined && avg !== null) {
+                const stdText = (std !== undefined && std !== null) ? ` σ: ${std.toFixed(2)}` : ''
+                suffix = `  {info|[ μ: ${avg.toFixed(2)}${stdText} ]}`
+              }
+            }
+            return `{mach|${displayName}}${cgrsBadge}${suffix}`
+          },
+          rich: {
+            mach: {
+              fontWeight: '900',
+              fontSize: 11,
+              color: '#0f172a'
+            },
+            cgrsNotice: {
+              fontWeight: '700',
+              fontSize: 9.5,
+              color: '#b45309',
+              backgroundColor: '#fef3c7',
+              borderColor: '#fde68a',
+              borderWidth: 1,
+              borderRadius: 3,
+              padding: [1, 4]
+            },
+            info: {
+              fontWeight: '400',
+              fontSize: 9,
+              color: '#64748b'
+            }
           }
         },
         lineStyle: {
@@ -345,7 +508,6 @@ const option = computed(() => {
   }
 })
 
-// 放大全屏模式配置（增强字号与节点间距）
 const zoomedOption = computed(() => {
   const baseOpt = option.value
   if (!baseOpt || !baseOpt.series) return {}
@@ -353,29 +515,28 @@ const zoomedOption = computed(() => {
   const deep = JSON.parse(JSON.stringify(baseOpt))
   const s = deep.series[0]
   s.left = 40
-  s.right = 160
+  s.right = 180
   s.top = 20
   s.bottom = 20
-  s.nodeGap = 36 // 放大模式下给予更充足的间距
+  s.nodeGap = 36
   s.nodeWidth = 20
   s.label.fontSize = 11
   s.label.color = '#1e293b'
-  s.label.formatter = function(params) {
-    const parts = params.name.split('_')
-    const displayName = parts.length > 1 ? parts[1] : params.name
-    const cpk = params.data.spec_cpk
-    if (cpk !== undefined && cpk !== null) {
-      if (props.indicator === 'weight') {
-        const avgPct = params.data.spec_ratio
-        const sign = avgPct > 0 ? '+' : ''
-        return `${displayName} (${sign}${avgPct.toFixed(2)}%)`
-      }
-      return `${displayName} (CPK: ${cpk.toFixed(2)})`
-    }
-    return displayName
+  s.label.formatter = baseOpt.series[0].label.formatter
+  s.label.rich = baseOpt.series[0].label.rich
+  if (deep.tooltip) {
+    deep.tooltip.formatter = baseOpt.tooltip.formatter
   }
 
   return deep
+})
+
+function openZoomDialog() {
+  dialogVisible.value = true
+}
+
+defineExpose({
+  openZoomDialog
 })
 </script>
 

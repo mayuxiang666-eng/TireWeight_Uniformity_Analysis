@@ -3,21 +3,20 @@
     
     <!-- Row 1: 加权 CPK 控制区间分析 (全宽) -->
     <section class="section-row">
-      <div class="card full-width">
+      <div id="tour-cpk-trend" class="card full-width">
         <div class="card-header">
           <div>
-            <div class="card-title" style="display: inline-flex; align-items: center; gap: 4px;">
-              <span>{{ tab1SelectedArticle ? tab1SelectedArticle + ' · ' : '' }}{{ cpkIndicator === 'cony' ? '整体指标预览 (实际值指标)' : '整体指标预览 (CPK指标)' }}</span>
+            <div class="card-title" style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>{{ tab1SelectedArticle ? tab1SelectedArticle + ' · ' : '' }}整体指标预览 (CPK指标)</span>
               <el-tooltip placement="top" raw-content>
                 <template #content>
                   <div v-if="cpkIndicator === 'cony'" style="max-width: 290px; font-size: 12px; line-height: 1.6; padding: 4px;">
-                    <strong style="color: #10b981;">实际测量值分析 (CONY)：</strong><br/>
-                    以规格 (Article10) 为基本单元，展示当前规格下实际测量数据的每日加权均值变化曲线。<br/><br/>
-                    <strong style="color: #f59e0b;">SPC 动态控制线：</strong><br/>
-                    本指标无固定标准限。控制线基于全量数据动态计算均值 (CL) 和标准差 (σ)，绘制：<br/>
-                    * UCL (上限控制限) = Mean + 3σ<br/>
-                    * LCL (下限控制限) = Mean - 3σ<br/>
-                    * 警戒线分别为 Mean ± 1σ 与 Mean ± 2σ。数据点超出 1σ 范围时自动触发预警并高亮显示。
+                    <strong style="color: #10b981;">过程能力指数 (CONY 双侧 CPK)：</strong><br/>
+                    以规格 (Article10) 为基本单元计算单日双侧 CPK：<br/>
+                    <code>CPK = min((USL - μ)/(3σ), (μ - LSL)/(3σ))</code><br/>
+                    系统使用配方表对应的 conny_usl 与 conny_lsl 双侧公差，全厂 CPK 为所有合格规格按排产条数加权平均。<br/><br/>
+                    <strong style="color: #f59e0b;">控制限标准 (SPC)：</strong><br/>
+                    绘制 1.33 目标基准线，低于 1.33 的点自动判定为预警/失控并高亮标红。
                   </div>
                   <div v-else style="max-width: 290px; font-size: 12px; line-height: 1.6; padding: 4px;">
                     <strong style="color: #10b981;">过程能力指数 (CPK)：</strong><br/>
@@ -30,6 +29,11 @@
                 </template>
                 <el-icon class="help-icon"><QuestionFilled /></el-icon>
               </el-tooltip>
+              <div v-if="filterStore.dataUpdateTime" class="data-update-capsule">
+                <span class="capsule-dot" />
+                <span class="capsule-label">数据最近刷新时间:</span>
+                <span class="capsule-val">{{ filterStore.dataUpdateTime }}</span>
+              </div>
             </div>
             <div class="breadcrumb mt-4" v-if="tab1SelectedArticle" style="display: flex; align-items: center; gap: 8px;">
               <el-button size="small" type="primary" plain :icon="RefreshLeft" @click="resetTab1Article()">全部规格 (重置)</el-button>
@@ -38,24 +42,17 @@
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 16px;">
-            <div style="display: flex; align-items: center; gap: 6px;" v-if="cpkIndicator === 'cony'">
-              <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 500;">选择规格:</span>
-              <el-select
-                v-model="tab1SelectedArticle"
-                filterable
-                clearable
-                placeholder="全部规格"
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 600;">Main Hall:</span>
+              <el-radio-group
+                v-model="filterStore.selectedPhase"
                 size="small"
-                style="width: 170px;"
-                @change="loadCpkTrend"
+                @change="handlePhaseChange"
               >
-                <el-option
-                  v-for="item in (allArticles.length > 0 ? allArticles : (filterStore.filterArticles || articles))"
-                  :key="item.article10 || item"
-                  :label="item.article10 || item"
-                  :value="item.article10 || item"
-                />
-              </el-select>
+                <el-radio-button value="all">全部</el-radio-button>
+                <el-radio-button value="p3">三期</el-radio-button>
+                <el-radio-button value="p4">四期</el-radio-button>
+              </el-radio-group>
             </div>
             
             <el-checkbox
@@ -65,8 +62,18 @@
               style="margin-left: 10px; font-weight: 500;"
               @change="handleExcludeTop10Change"
             >
-              🚫 剔除 Top 10 预警规格
+              剔除 Top 10 预警规格
             </el-checkbox>
+
+            <el-button
+              v-if="tab1SelectedArticle"
+              size="small"
+              :class="['exclude-outliers-btn', { 'is-active': excludeOutliers }]"
+              @click="excludeOutliers = !excludeOutliers; loadCpkTrend()"
+            >
+              <el-icon v-if="excludeOutliers" style="margin-right: 4px; font-weight: bold;"><Select /></el-icon>
+              <span>{{ excludeOutliers ? '已剔除异常值 (Q3+1.5IQR)' : '剔除异常值 (Q3+1.5IQR)' }}</span>
+            </el-button>
           </div>
         </div>
         <div class="card-body" style="min-height:380px; height:380px;">
@@ -84,38 +91,25 @@
     </section>
 
 
-    <!-- Row 2: 智能诊断预警卡片面板 (已暂时关闭以提升页面响应速度) -->
-    <section class="section-row" v-if="false">
-      <InsightsPanel
-        :alerts="alerts"
-        :loading="insightsLoading"
-        @select-article="onTab1ArticleDrill"
-        @select-machine="handleSelectMachine"
-      />
-    </section>
-
     <!-- Row 3: 规格排行与机台排行并排 -->
     <section class="section-row two-col">
-      <!-- 左侧: 预警规格型号排行 -->
-      <div class="card" style="min-width:0; flex: 3.5; display: flex; flex-direction: column; overflow: hidden;">
-        <template v-if="cpkIndicator === 'cony'">
-          <div style="height: 100%; min-height: 585px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; text-align: center;">
-            <el-icon size="40" style="color: var(--el-color-warning); margin-bottom: 12px;"><WarningFilled /></el-icon>
-            <div style="font-size: 14px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 6px;">
-              模块已停用
-            </div>
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); max-width: 260px; line-height: 1.6;">
-              当前研究指标为 [CONY] 。此模块仅在 rfpp 和 rfh1 指标模式下启用。
-            </div>
-          </div>
-        </template>
-        <div v-else-if="!selectedTrendDate" class="empty-period-card" style="height: 100%; display: flex; align-items: center; justify-content: center; min-height: 585px;">
+      <!-- 左侧: 核心规格行动表 (占 40%) -->
+      <div id="tour-spec-action-table" class="card" style="min-width:0; flex: 4; display: flex; flex-direction: column; overflow: hidden; height: 650px;">
+        <div v-if="!selectedTrendDate" class="empty-period-card" style="height: 100%; display: flex; align-items: center; justify-content: center;">
           <el-empty description="请点击上方 CPK 趋势图的任意数据点以载入该天的规格预警分析" :image-size="60" />
         </div>
         <template v-else>
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 8px;">
-            <div class="card-title" style="display: inline-flex; align-items: center; gap: 4px;">
-              <span>{{ cpkIndicator === 'weight' ? '生产偏差贡献规格排行' : 'CPK 负向贡献规格排行' }} - {{ selectedTrendDate }}</span>
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-bottom: 8px; flex-shrink: 0;">
+            <div class="card-title" style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
+              <span style="white-space: nowrap; font-weight: 600; font-size: 13px;">
+                核心规格行动表
+              </span>
+              <span
+                v-if="tab1SelectedArticle"
+                class="spec-focus-badge"
+              >
+                已聚焦: {{ tab1SelectedArticle }}
+              </span>
               <el-tooltip placement="top" raw-content>
                 <template #content>
                   <div style="max-width: 280px; font-size: 12px; line-height: 1.5;">
@@ -123,13 +117,13 @@
                       <strong>偏差贡献排行逻辑：</strong><br/>
                       计算当日规格对全厂整体偏差率的拉低贡献度：<br/>
                       <code>贡献度 = (单规格偏差率 - 全厂整体偏差率) × 规格产量占比</code><br/><br/>
-                      系统筛选出当天影响整体偏差最大的规格，按拉低贡献大小进行降序排列。
+                      预警分级：🔴 红色预警 > 🟠 橙色预警 > 🟡 黄色预警。同级别内按负向拉低贡献降序排列。
                     </template>
                     <template v-else>
                       <strong>负向贡献排行逻辑 (方案 B)：</strong><br/>
                       计算当日规格对全区加权综合 CPK 的负向拉低贡献度：<br/>
                       <code>CPK 负向贡献 = (当日系统综合 CPK - 单规格 CPK) × 规格产量 (N)</code><br/><br/>
-                      系统筛选出当天 CPK 低于全日系统加权平均值的规格，按拉低贡献度大小进行降序排列（排在最前的规格即是对整体质量影响最大的核心瓶颈规格）。
+                      预警分级：🔴 红色预警 > 🟠 橙色预警 > 🟡 黄色预警。同级别内按负向拉低贡献降序排列。
                     </template>
                   </div>
                 </template>
@@ -137,147 +131,196 @@
               </el-tooltip>
             </div>
             <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap;">
-              <span style="font-size: 12px; color: var(--el-text-color-regular);">日产量门槛:</span>
-              <el-input-number v-model="warningMinSamples" :min="1" :max="1000" size="small" style="width: 90px;" @change="loadWarningArticles" />
+              <template v-if="tab1SelectedArticle">
+                <el-button
+                  size="small"
+                  class="btn-warm-outline"
+                  :icon="RefreshLeft"
+                  @click="resetTab1Article"
+                >
+                  查看全量
+                </el-button>
+                <el-button
+                  size="small"
+                  class="btn-warm-primary"
+                  :icon="TrendCharts"
+                  @click="handleOpenBarcodeMeasurements(tab1SelectedArticle)"
+                >
+                  单规格折线图
+                </el-button>
+              </template>
+              <template v-else>
+                <template v-if="cpkIndicator !== 'weight'">
+                  <span style="font-size: 12px; color: var(--el-text-color-regular);">CPK:</span>
+                  <el-input-number
+                    v-model="warningMaxCpk"
+                    :min="0.01"
+                    :max="5.0"
+                    :step="0.05"
+                    :precision="2"
+                    size="small"
+                    style="width: 80px;"
+                    @change="loadWarningArticles"
+                  />
+                </template>
+                <span style="font-size: 12px; color: var(--el-text-color-regular); margin-left: 2px;">产量:</span>
+                <el-input-number v-model="warningMinSamples" :min="1" :max="1000" size="small" style="width: 75px;" @change="loadWarningArticles" />
+              </template>
             </div>
           </div>
           
-          <!-- 公式的警示说明框 (放在 header 之外，宽度自适应铺满) -->
-          <div style="padding: 0 20px 8px 20px;">
-            <el-alert
-              type="warning"
-              :closable="false"
-              style="padding: 8px 12px; background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; width: 100%;"
+          <!-- 公式的警示说明框 (象牙暖金全局统一风格) -->
+          <div style="padding: 0 16px 8px 16px; flex-shrink: 0;">
+            <div
+              :style="{
+                padding: '7px 12px',
+                borderRadius: '8px',
+                width: '100%',
+                backgroundColor: tab1SelectedArticle ? '#fffbeb' : '#fafaf9',
+                backgroundImage: tab1SelectedArticle ? 'linear-gradient(135deg, #fffdf5 0%, #fffbeb 100%)' : 'none',
+                border: tab1SelectedArticle ? '1px solid #fde68a' : '1px solid #e7e5e4',
+                borderLeft: tab1SelectedArticle ? '3px solid #f59e0b' : '3px solid #cbd5e1',
+                boxShadow: tab1SelectedArticle ? '0 1px 3px rgba(245, 158, 11, 0.08)' : 'none',
+                transition: 'all 0.25s ease'
+              }"
             >
-              <template #title>
-                <div style="color: #b45309; font-size: 12px; line-height: 1.6; display: flex; flex-direction: column; gap: 4px;">
-                  <div style="color: #b45309; font-weight: bold;">
-                    {{ cpkIndicator === 'weight' ? '排查依据公式：贡献度 = (单规格偏差率 - 全厂整体偏差率) × 规格产量占比' : '排查依据公式：贡献度 = (系统综合 CPK - 单规格 CPK) × 规格产量 (N)' }}
+              <div style="font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 3px;">
+                <template v-if="tab1SelectedArticle">
+                  <div style="color: #92400e; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span>
+                    已聚焦规格：{{ tab1SelectedArticle }}（{{ selectedTrendDate }} 质量追溯联动中）
                   </div>
-                  <div style="color: #78350f; font-size: 11px; font-weight: normal;">
-                    {{ cpkIndicator === 'weight' ? '⚠️ 说明：贡献度数值（绝对值）越大，表明该规格拉大或偏离整体均值的问题越严重。红色圆点标志表示该规格的主要责任机台已识别。' : '⚠️ 说明：贡献度数值越大，表明该规格拉低整体质量的问题越严重。红色圆点标志表示该规格的主要责任机台已识别。' }}
+                  <div style="color: #78350f; font-size: 11px; font-weight: 500;">
+                    下方表格已高亮标示该规格；右侧工序流转与批次数据已同步联动。点击上方“查看全量”按钮可清除聚焦。
                   </div>
-                </div>
-              </template>
-            </el-alert>
+                </template>
+                <template v-else>
+                  <div style="color: #44403c; font-weight: 600;">
+                    预警规则：🔴 红色预警（调参恶化 / 持续霸榜）> 🟠 橙色预警（降幅超 35% / 持续在榜）> 🟡 黄色预警
+                  </div>
+                  <div style="color: #78716c; font-size: 11px; font-weight: normal;">
+                    说明：同预警等级内严格按负向拉低贡献由重到轻排列。悬浮规格可查看完整指标卡片，点击任意行可下钻联动右侧流转图。
+                  </div>
+                </template>
+              </div>
+            </div>
           </div>
           
-          <div class="card-body" style="min-height: 585px; height: 585px;">
-            <ArticleBarChart
+          <div class="card-body" style="flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden;">
+            <CoreSpecActionTable
               :data="articles"
               :loading="articleLoading"
               :error="articleError"
               :selected-article="tab1SelectedArticle"
               :indicator="cpkIndicator"
+              :target-date="selectedTrendDate"
+              :is-latest-date="isLatestDate"
               @drill-down="onTab1ArticleDrill"
+              @open-recommend="handleOpenTableRecommend"
             />
           </div>
         </template>
       </div>
 
 
-      <!-- 右侧: 机台 CPK (avg + 3σ) 数据表格 与 生产工序流转图 Tab 页面 -->
-      <div class="card" style="min-width:0; flex: 6.5; display: flex; flex-direction: column; overflow: hidden;">
-        <div v-if="!selectedTrendDate" class="empty-period-card" style="height: 100%; display: flex; align-items: center; justify-content: center; min-height: 585px;">
+      <!-- 右侧: 机台 CPK (avg + 3σ) 数据表格 与 生产工序流转图 Tab 页面 (占 60%) -->
+      <div id="tour-process-sankey" class="card" style="min-width:0; flex: 6; display: flex; flex-direction: column; overflow: hidden; height: 650px;">
+        <div v-if="!selectedTrendDate" class="empty-period-card" style="height: 100%; display: flex; align-items: center; justify-content: center;">
           <el-empty description="请点击上方 CPK 趋势图的任意数据点以载入工序流转及路径分析" :image-size="60" />
         </div>
         <template v-else>
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 8px;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 8px; flex-shrink: 0;">
             <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-              <!-- 仅在 CPK 模式下显示 Tab 切换与诊断 -->
-              <template v-if="cpkIndicator !== 'cony'">
-                <el-radio-group v-model="machineTabActive" size="small">
-                  <el-radio-button value="sankey_flow">单日生产工序路径</el-radio-button>
-                  <el-radio-button value="best_sankey_flow">全量最佳生产路径</el-radio-button>
-                </el-radio-group>
+              <!-- 显示 Tab 切换与诊断 -->
+              <el-radio-group v-model="machineTabActive" size="small">
+                <el-radio-button value="sankey_flow">单日生产工序路径</el-radio-button>
+                <el-radio-button value="best_sankey_flow">全量最佳生产路径</el-radio-button>
+              </el-radio-group>
 
-                <el-tooltip v-if="machineTabActive === 'sankey_flow'" placement="top" raw-content>
-                  <template #content>
-                    <div style="max-width: 280px; font-size: 12px; line-height: 1.5;">
-                      展示选定日期当天的所有工序路径流转情况。连线和节点颜色标记代表存在多个机台分流生产，颜色的深浅代表 CPK 指数的好坏，发光红圈（红色阴影发光效果）代表该工段的瓶颈/问题机台。
-                    </div>
-                  </template>
-                  <el-icon class="help-icon" style="margin-left: 2px; cursor: pointer; color: var(--c-text-muted);"><QuestionFilled /></el-icon>
-                </el-tooltip>
+              <el-tooltip v-if="machineTabActive === 'sankey_flow'" placement="top" raw-content>
+                <template #content>
+                  <div style="max-width: 280px; font-size: 12px; line-height: 1.5;">
+                    展示选定日期当天的所有工序路径流转情况。连线和节点颜色标记代表存在多个机台分流生产，颜色的深浅代表 CPK 指数的好坏，发光红圈（红色阴影发光效果）代表该工段的瓶颈/问题机台。
+                  </div>
+                </template>
+                <el-icon class="help-icon" style="margin-left: 2px; cursor: pointer; color: var(--c-text-muted);"><QuestionFilled /></el-icon>
+              </el-tooltip>
 
-                <el-tooltip v-else-if="machineTabActive === 'best_sankey_flow'" placement="top" raw-content>
-                  <template #content>
-                    <div style="max-width: 280px; font-size: 12px; line-height: 1.5;">
-                      基于过去 30 天的历史生产数据，通过算法计算出的 TU 检测结果（CPK）最优的推荐流转路径。
-                    </div>
-                  </template>
-                  <el-icon class="help-icon" style="margin-left: 2px; cursor: pointer; color: var(--c-text-muted);"><QuestionFilled /></el-icon>
-                </el-tooltip>
+              <el-tooltip v-else-if="machineTabActive === 'best_sankey_flow'" placement="top" raw-content>
+                <template #content>
+                  <div style="max-width: 280px; font-size: 12px; line-height: 1.5;">
+                    基于过去 30 天的历史生产数据，通过算法计算出的 TU 检测结果（CPK）最优的推荐流转路径。
+                  </div>
+                </template>
+                <el-icon class="help-icon" style="margin-left: 2px; cursor: pointer; color: var(--c-text-muted);"><QuestionFilled /></el-icon>
+              </el-tooltip>
 
-                <!-- 决策树分析入口按钮 -->
-                <el-button type="primary" size="small" plain style="margin-left: 12px;" @click="combinationTreeDialogVisible = true">
-                  机台组合分析
-                </el-button>
-              </template>
-              <span v-else style="font-size: 14px; font-weight: 600; color: var(--el-text-color-primary);">全量最佳生产路径</span>
+              <!-- 决策树分析入口按钮 -->
+              <el-button type="primary" size="small" plain style="margin-left: 12px;" @click="combinationTreeDialogVisible = true">
+                机台组合分析
+              </el-button>
 
-              <!-- Tab 1 / Tab 2 显示静态绑定规格 Tag (仅在非 cony 且非 best 模式下) -->
-              <template v-if="cpkIndicator !== 'cony' && machineTabActive !== 'best_sankey_flow'">
-                <el-tag v-if="tab1SelectedArticle" size="small" type="success">
-                  规格: {{ tab1SelectedArticle }}
-                </el-tag>
-                <el-tag v-else size="small" type="info">
-                  规格: {{ articles[0]?.article10 || '未选中' }}
-                </el-tag>
-              </template>
-
-              <!-- Tab 3 显示可搜索/可输入的规格选择框 (best 模式，或在 cony 指标下直接显示) -->
-              <template v-else>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 500;">分析规格:</span>
-                  <el-select
-                    v-model="bestPathArticle"
-                    filterable
-                    clearable
-                    placeholder="选择或输入 10 位规格"
-                    size="small"
-                    style="width: 170px;"
-                    @change="loadMachineBestProcessSankey"
-                  >
-                    <el-option
-                      v-for="item in (allArticles.length > 0 ? allArticles : (filterStore.filterArticles || articles))"
-                      :key="item.article10 || item"
-                      :label="item.article10 || item"
-                      :value="item.article10 || item"
-                    />
-                  </el-select>
-                </div>
-              </template>
+              <el-tag v-if="tab1SelectedArticle" size="small" type="success">
+                规格: {{ tab1SelectedArticle }}
+              </el-tag>
+              <el-tag v-else size="small" type="warning" effect="plain">
+                未选定规格
+              </el-tag>
             </div>
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
               <div style="display: flex; align-items: center; gap: 6px;">
                 <span style="font-size: 12px; color: var(--el-text-color-regular);">样本门槛:</span>
                 <el-input-number v-model="machineMinSamples" :min="1" :max="1000" size="small" style="width: 90px;" @change="handleMachineMinSamplesChange" />
               </div>
+              <el-button size="small" type="primary" plain :icon="ZoomIn" @click="handleOpenSankeyZoom">
+                放大查看
+              </el-button>
             </div>
           </div>
 
-          <div class="card-body" style="min-height: 585px; height: 585px; padding-top: 10px;">
+          <div class="card-body" style="flex: 1; min-height: 0; padding-top: 10px; display: flex; flex-direction: column; overflow: hidden;">
+            <!-- 未选定规格提示 -->
+            <div v-if="!tab1SelectedArticle" style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <el-empty
+                description="请在上方搜索栏或左侧预警列表中选定具体规格"
+                :image-size="90"
+              >
+                <template #extra>
+                  <div style="font-size: 12.5px; color: #64748b; line-height: 1.6; text-align: center; max-width: 480px; margin-top: 6px;">
+                    💡 <strong>操作提示</strong>：单日工序流转与全量最佳路径针对具体规格进行分析。<br/>
+                    请在左侧<strong>「恶化预警规格」</strong>中点击任意规格，或在顶部<strong>「规格」</strong>下拉栏中搜索选定。
+                  </div>
+                </template>
+              </el-empty>
+            </div>
+
             <!-- Tab 2: 单日生产工序流转桑基图 -->
             <MachineProcessSankeyChart
-              v-if="machineTabActive === 'sankey_flow'"
+              v-else-if="machineTabActive === 'sankey_flow'"
+              ref="sankeyChartRef"
               :sankey-data="sankeyData"
               :loading="sankeyLoading"
               :error="sankeyError"
               :indicator="cpkIndicator"
               :tolerance="filterStore.weightTolerance"
-              @click-node="handleSankeyNodeClick"
+              :article="tab1SelectedArticle"
+              @open-cgrs="handleOpenCgrs"
             />
             <!-- Tab 3: 全量数据集最佳生产路径桑基图 -->
             <MachineBestProcessSankeyChart
               v-else-if="machineTabActive === 'best_sankey_flow'"
+              ref="bestSankeyChartRef"
               :sankey-data="bestSankeyData"
               :loading="bestSankeyLoading"
               :error="bestSankeyError"
               :indicator="cpkIndicator"
               :tolerance="filterStore.weightTolerance"
-              @click-node="handleSankeyNodeClick"
+              :article="tab1SelectedArticle"
+              :recommendation-data="paramRecommendationData"
+              :recommendation-loading="paramRecommendationLoading"
+              @open-cgrs="handleOpenCgrs"
             />
+
           </div>
         </template>
       </div>
@@ -286,18 +329,7 @@
     <!-- Row 3.5: 横跨两列 (Full-Width 通栏): 物料批次分析卡片 -->
     <section class="section-row" v-if="selectedTrendDate">
       <div class="card full-width" style="width: 100%;">
-        <template v-if="cpkIndicator === 'cony'">
-          <div style="height: 250px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; text-align: center; width: 100%;">
-            <el-icon size="40" style="color: var(--el-color-warning); margin-bottom: 12px;"><WarningFilled /></el-icon>
-            <div style="font-size: 14px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 6px;">
-              模块已停用
-            </div>
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); max-width: 320px; line-height: 1.6;">
-              当前研究指标为 [CONY] 。此模块仅在 rfpp 和 rfh1 指标模式下启用。
-            </div>
-          </div>
-        </template>
-        <template v-else>
+        <template v-if="true">
           <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
               <div class="card-title" style="display: inline-flex; align-items: center; gap: 6px;">
@@ -306,8 +338,8 @@
               <el-tag v-if="tab1SelectedArticle" size="small" type="success">
                 规格: {{ tab1SelectedArticle }}
               </el-tag>
-              <el-tag v-else size="small" type="info">
-                规格: {{ articles[0]?.article10 || '未选中' }}
+              <el-tag v-else size="small" type="warning" effect="plain">
+                未选定规格
               </el-tag>
               <span style="font-size: 12px; color: var(--el-text-color-secondary);">
                 | 日期: {{ selectedTrendDate }}
@@ -315,12 +347,20 @@
             </div>
           </div>
           <div class="card-body" style="min-height: 380px; padding-top: 10px;">
+            <div v-if="!tab1SelectedArticle" style="height: 340px; display: flex; align-items: center; justify-content: center;">
+              <el-empty
+                description="请先选定规格以查看物料批次质量追溯数据"
+                :image-size="75"
+              />
+            </div>
             <ArticleLotCpkChart
+              v-else
               :lot-data="lotCpkData"
               :usl-value="lotUslValue"
+              :lsl-value="lotLslValue"
               :loading="lotCpkLoading"
               :error="lotCpkError"
-              :selected-article="tab1SelectedArticle || (articles[0]?.article10 ?? '')"
+              :selected-article="tab1SelectedArticle"
               :target-date="selectedTrendDate"
               :indicator="cpkIndicator"
               @reload="handleLotChartReload"
@@ -330,196 +370,17 @@
       </div>
     </section>
 
-    <!-- Row 4: 制造工序主导路径表与深度归因诊断面板 (已暂时关闭以提升页面响应速度) -->
-    <section class="section-row two-col diagnostics-panel-section" v-if="false">
-      <!-- 左侧: 制造工序主导路径 / 双机台联合风险 Tab 切换 -->
-      <div class="card" style="min-width:0; flex:1.3; height: 680px; display: flex; flex-direction: column;" v-loading="pathsLoading || combLoading">
-        <el-tabs v-model="row4ActiveTab" class="row4-custom-tabs">
-          <!-- Tab 1: 主导路径 -->
-          <el-tab-pane name="paths">
-            <template #label>
-              <span style="display:inline-flex;align-items:center;gap:4px;">
-                工艺主导路径
-                <el-tooltip placement="top" raw-content>
-                  <template #content>
-                    <div style="max-width:300px;font-size:12px;line-height:1.6">
-                      <strong>计算逻辑：</strong><br/>
-                      基于 KMeans 将研究期批次分离为「异常簇」与「正常簇」，每个工序取集中度最高的机台作为主导机台。<br/><br/>
-                      <strong>工艺集中度</strong> = 该机台在本簇内的出现频率<br/>
-                      <strong>全量自然基准</strong> = 该机台在全量样本的出现频率<br/>
-                      <strong>Step Lift</strong> = 工艺集中度 / 全量自然基准<br/><br/>
-                      Step Lift ≥ 1.5 视为显著异常富集，意味着异常批次对该机台存在超额依赖。
-                    </div>
-                  </template>
-                  <el-icon class="help-icon" style="font-size:12px;"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </span>
-            </template>
-              <div class="tab-pane-content">
-                <div class="filter-row-sub">
-                  <div class="text-muted"></div>
-                  <!-- 自定义下划线选中样式的子簇选择器 -->
-                <div class="cluster-tab-group mt-8" v-if="filterStore.hasAnalysisPeriod">
-                  <button
-                    v-for="key in Object.keys(pathsData)"
-                    :key="key"
-                    :class="['cluster-tab-btn', activePathTab === key ? (key.startsWith('anomaly_cluster_') ? 'active-anomaly' : 'active-normal') : '']" 
-                    @click="activePathTab = key"
-                  >
-                    {{ getPathTabName(key) }}
-                  </button>
-                </div>
-              </div>
 
-              <div v-if="!filterStore.hasAnalysisPeriod" class="empty-period-card" style="padding: 20px 0; border: none; box-shadow: none;">
-                <el-empty description="请先在左侧选择“基准期”与“研究期”以激活工艺路径对比聚类诊断" :image-size="60" />
-              </div>
-              <template v-else>
-                <!-- 警告 Banner -->
-                <el-alert
-                  v-if="pathSuspects.length"
-                  title="算法判定：工艺路径富集机台警报"
-                  type="warning"
-                  show-icon
-                  :closable="false"
-                  style="margin-bottom:12px; margin-top: 8px;"
-                >
-                  <template #default>
-                    <div style="font-size:12px;line-height:1.6">
-                      对比分析发现，在当前的工艺组画像中，以下设备展现出高度的异常富集：
-                      <div v-for="item in pathSuspects" :key="item.step + item.machine">
-                        • <strong>{{ item.cluster }}</strong> 的 <strong>{{ item.step }}</strong> 工序，
-                        机台 <strong>{{ item.machine }}</strong> 发生富集（提升度达 <strong>{{ item.lift }}x</strong>）。
-                      </div>
-                      这反映了该设备加工参数偏离，点击下方表格内机台名称可直接跳转开展物料批次诊断。
-                    </div>
-                  </template>
-                </el-alert>
 
-                <!-- 路径对照表格 -->
-                <el-table
-                  :data="currentPathList"
-                  size="small"
-                  border
-                  stripe
-                  style="width:100%"
-                  :cell-class-name="pathCellClass"
-                >
-                  <el-table-column label="制造工序步骤 (Step)" width="130">
-                    <template #default="{ row }">
-                      <span
-                        class="step-interactive-link"
-                        :class="{ 'is-active': selectedWorkcenter === row.step }"
-                        @click="toggleWorkcenterFilter(row.step)"
-                      >
-                        {{ row.step }}
-                      </span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="首选设备机台 (Dominant Machine)">
-                    <template #default="{ row }">
-                      <button
-                        :class="['machine-tag-btn', 'step-' + getStepPrefix(row.step)]" 
-                        @click="handleTableMachineJump(row)"
-                      >
-                        {{ row.machine }}
-                      </button>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="concentration_ratio" label="工艺集中度" align="right" width="110">
-                    <template #default="{ row }">{{ row.concentration_ratio }}%</template>
-                  </el-table-column>
-                  <el-table-column prop="natural_baseline" label="全量自然基准" align="right" width="110">
-                    <template #default="{ row }">{{ row.natural_baseline }}%</template>
-                  </el-table-column>
-                  <el-table-column prop="step_lift" label="Step Lift" align="right" width="100">
-                    <template #default="{ row }">
-                      <span v-if="row.step_lift >= 1.5" class="lift-badge-danger">{{ row.step_lift }}x</span>
-                      <span v-else class="lift-badge-normal">{{ row.step_lift }}x</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </template>
-            </div>
-          </el-tab-pane>
-
-          <!-- Tab 2: 联合风险 (若 combinations 无数据则 disabled) -->
-          <el-tab-pane name="combinations" :disabled="combinations.length === 0">
-            <template #label>
-              <span style="display:inline-flex;align-items:center;gap:4px;">
-                双机台联合风险
-                <el-tooltip placement="top" raw-content>
-                  <template #content>
-                    <div style="max-width:300px;font-size:12px;line-height:1.6">
-                      <strong>计算逻辑：</strong><br/>
-                      统计研究期内同时流经机台 A 与机台 B 的物料批次（联合排产量），计算该批次组合的异常率。<br/><br/>
-                      <strong>联合异常率</strong> = 联合异常件数 / 联合排产量<br/>
-                      <strong>联合提升度</strong> = 联合异常率 / 全局异常基准率<br/><br/>
-                      提升度 > 1 表示双机台组合存在交叉污染或工艺干涉放大效应，值越高风险越大。
-                    </div>
-                  </template>
-                  <el-icon class="help-icon" style="font-size:12px;"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </span>
-            </template>
-            <div class="tab-pane-content">
-              <div class="text-muted" style="margin-bottom: 12px;">评估在研究期内同时流经特定两个设备的产品坏损几率，查找跨工序交叠溢出风险。</div>
-              <el-table :data="combinations" size="small" border stripe style="width:100%">
-                <el-table-column label="工位 A" width="90">
-                  <template #default="{ row }">{{ row.wc_a.replace('_workcenter', '') }}</template>
-                </el-table-column>
-                <el-table-column label="机台 A" prop="machine_a" />
-                <el-table-column label="工位 B" width="90">
-                  <template #default="{ row }">{{ row.wc_b.replace('_workcenter', '') }}</template>
-                </el-table-column>
-                <el-table-column label="机台 B" prop="machine_b" />
-                <el-table-column label="联合排产" prop="total_matches" align="right" width="80" />
-                <el-table-column label="联合异常" prop="anomaly_matches" align="right" width="80" />
-                <el-table-column label="联合异常率" align="right" width="95">
-                  <template #default="{ row }">{{ row.joint_anomaly_rate }}%</template>
-                </el-table-column>
-                <el-table-column label="联合提升度" align="right" width="95">
-                  <template #default="{ row }">
-                    <span class="text-danger text-bold">{{ row.joint_lift }}x</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="工艺瓶颈判定说明" min-width="150">
-                  <template #default="{ row }">
-                    <span style="color:#d97706; font-weight:500; font-size: 11px;">
-                      流经 {{ row.machine_a }} + {{ row.machine_b }} 时，异常几率提升至 {{ row.joint_lift }} 倍。
-                    </span>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-
-      <!-- 右侧: 深度归因诊断面板 (与左侧等高 680px) -->
-      <div class="card" style="flex:1; min-width:0; height: 680px; display: flex; flex-direction: column; overflow: hidden;">
-        <div v-if="!filterStore.hasAnalysisPeriod" class="empty-period-card" style="height: 100%; display: flex; align-items: center; justify-content: center;">
-          <el-empty description="请在左侧选择“基准期”和“研究期”以激活深度根因诊断模块" :image-size="60">
-            <div class="text-muted mt-8">该模块将自动结合对照直方图判定原料批次缺陷或设备精度漂移。</div>
-          </el-empty>
-        </div>
-        <DiagnosticsPanel
-          v-else
-          :baseline-range="filterStore.baselineRange"
-          :study-range="filterStore.studyRange"
-        />
-      </div>
-    </section>
-
-    <!-- 机台 CPK 趋势下钻弹窗 -->
-    <MachineCpkTrendDialog
-      v-model:visible="trendDialogVisible"
-      :machine="trendDialogMachine"
-      :workcenter-col="trendDialogWorkcenterCol"
-      :article10="trendDialogArticle10"
-      :mode="trendDialogMode"
-      :indicator="cpkIndicator"
-      :selected-date="selectedTrendDate"
+    <!-- 成型机台 CGRS 参数变更记录弹窗 -->
+    <CgrsRecordDialog
+      v-model:visible="cgrsDialogVisible"
+      :machine="cgrsDialogMachine"
+      :date="cgrsDialogDate"
+      :article="cgrsDialogArticle"
+      :indicator="cgrsDialogIndicator || cpkIndicator"
+      :is-top-warning="cgrsIsTopWarning"
+      :top-machines="cgrsTopMachines"
     />
 
     <!-- 机台排列组合树分析弹窗 -->
@@ -535,7 +396,7 @@
       <div style="height: 600px; display: flex; flex-direction: column;">
         <MachineCombinationTree
           v-if="combinationTreeDialogRendered"
-          :selected-article="tab1SelectedArticle || (articles[0]?.article10 ?? null)"
+          :selected-article="tab1SelectedArticle || null"
           :start-date="machineCpkDateRange && machineCpkDateRange.length === 2 ? machineCpkDateRange[0] : null"
           :end-date="machineCpkDateRange && machineCpkDateRange.length === 2 ? machineCpkDateRange[1] : null"
           :target-date="selectedTrendDate"
@@ -546,6 +407,27 @@
       </div>
     </el-dialog>
 
+    <!-- 单规格单胎实测值折线图弹窗 -->
+    <BarcodeMeasurementsDialog
+      v-model:visible="barcodeDialogVisible"
+      :article10="barcodeDialogArticle || tab1SelectedArticle"
+      :target-date="selectedTrendDate"
+      :indicator="cpkIndicator"
+      :time-col="filterStore.selectedTimeCol"
+      :phase="filterStore.selectedPhase"
+    />
+
+    <!-- 专属轻量工艺参数推荐弹窗 (从核心规格行动表触发) -->
+    <MachineRecommendParamDialog
+      v-model:visible="recDialogVisible"
+      :machine="recDialogMachine"
+      :target-date="selectedTrendDate"
+      :article="recDialogArticle"
+      :workcenter-type="recDialogStage"
+      :indicator="cpkIndicator"
+      :reason="recDialogReason"
+    />
+
   </div>
 </template>
 
@@ -555,23 +437,60 @@ import { ElMessage } from 'element-plus'
 import { useFilterStore } from '../store/filter.js'
 import { api } from '../api/index.js'
 import TrendChart from '../components/charts/TrendChart.vue'
-import ArticleBarChart from '../components/charts/ArticleBarChart.vue'
-import MachineCpkTrendDialog from '../components/dialogs/MachineCpkTrendDialog.vue'
+import CoreSpecActionTable from '../components/tables/CoreSpecActionTable.vue'
+import MachineRecommendParamDialog from '../components/dialogs/MachineRecommendParamDialog.vue'
+import CgrsRecordDialog from '../components/dialogs/CgrsRecordDialog.vue'
 import MachineProcessSankeyChart from '../components/charts/MachineProcessSankeyChart.vue'
 import MachineBestProcessSankeyChart from '../components/charts/MachineBestProcessSankeyChart.vue'
 import MachineCombinationTree from '../components/charts/MachineCombinationTree.vue'
 import ArticleLotCpkChart from '../components/charts/ArticleLotCpkChart.vue'
-import InsightsPanel from '../components/panels/InsightsPanel.vue'
-import DiagnosticsPanel from '../components/panels/DiagnosticsPanel.vue'
+import BarcodeMeasurementsDialog from '../components/modals/BarcodeMeasurementsDialog.vue'
 
-import { QuestionFilled, RefreshLeft } from '@element-plus/icons-vue'
+import { QuestionFilled, RefreshLeft, ZoomIn, TrendCharts, Select } from '@element-plus/icons-vue'
+import { useDashboardTour } from '../composables/useDashboardTour.js'
 
 const filterStore = useFilterStore()
+const { startTour } = useDashboardTour()
+
+onMounted(() => {
+  // 首次访问自动唤醒新手引导 (延时 1000ms 等待图表与布局初次渲染完成)
+  setTimeout(() => {
+    startTour(false)
+  }, 1000)
+})
+
+// ── 核心规格行动表参数推荐弹窗控制 ──
+const recDialogVisible = ref(false)
+const recDialogMachine = ref('')
+const recDialogArticle = ref('')
+const recDialogStage = ref('gt')
+const recDialogReason = ref('degradation')
+
+function handleOpenTableRecommend(row) {
+  if (!row || !row.warning_machine) return
+  recDialogMachine.value = row.warning_machine
+  recDialogArticle.value = row.article10 || tab1SelectedArticle.value || ''
+  recDialogStage.value = row.recommend_stage || 'gt'
+  recDialogReason.value = 'degradation'
+  recDialogVisible.value = true
+}
+
+// ── 单胎实际测量值折线图 (Barcode Run Chart) 弹窗 ──
+const barcodeDialogVisible = ref(false)
+const barcodeDialogArticle = ref(null)
+
+function handleOpenBarcodeMeasurements(article = null) {
+  const target = article || tab1SelectedArticle.value
+  if (!target) {
+    ElMessage.warning('请先选定要查看单胎实测值的规格')
+    return
+  }
+  barcodeDialogArticle.value = target
+  barcodeDialogVisible.value = true
+}
 
 // 排序控制 (固定使用异常贡献率与提升度)
 
-// Row 4 Active Tab
-const row4ActiveTab = ref('paths')
 
 // Tab 1 本地下钻规格状态
 const tab1SelectedArticle = ref(null)
@@ -580,6 +499,16 @@ const tab1SelectedArticle = ref(null)
 watch(() => filterStore.selectedArticle, (newVal) => {
   if (tab1SelectedArticle.value !== newVal) {
     tab1SelectedArticle.value = newVal
+    loadCpkTrend()
+    if (selectedTrendDate.value) {
+      loadWarningArticles()
+      loadLotCpkTrend()
+    }
+    if (machineTabActive.value === 'sankey_flow') {
+      loadMachineProcessSankey()
+    } else if (machineTabActive.value === 'best_sankey_flow') {
+      loadMachineBestProcessSankey()
+    }
   }
 }, { immediate: true })
 
@@ -589,7 +518,6 @@ watch(() => tab1SelectedArticle.value, (newVal) => {
   }
 })
 
-const selectedWorkcenter = ref(null)
 
 // CPK 趋势与指标状态
 const cpkIndicator = computed(() => filterStore.cpkIndicator)
@@ -598,6 +526,7 @@ const cpkData = ref({})
 const cpkLoading = ref(false)
 const cpkError = ref(null)
 const excludeTop10 = ref(false)
+const excludeOutliers = ref(false)
 
 async function loadCpkTrend() {
   cpkLoading.value = true
@@ -605,12 +534,37 @@ async function loadCpkTrend() {
   try {
     const params = {}
     params.grain = filterStore.trendGranularity
+    params.time_col = filterStore.selectedTimeCol
+    params.phase = filterStore.selectedPhase
+    params.shift = filterStore.selectedShift
+    if (excludeOutliers.value) {
+      params.exclude_outliers = true
+    }
     if (tab1SelectedArticle.value) {
       params.article10 = tab1SelectedArticle.value
-    } else if (excludeTop10.value && articles.value && articles.value.length > 0) {
-      const top10Articles = articles.value.slice(0, 10).map(a => a.article10).filter(Boolean)
-      if (top10Articles.length > 0) {
-        params.exclude_articles = top10Articles.join(',')
+    } else if (excludeTop10.value) {
+      let topArticlesList = articles.value
+      if (!topArticlesList || topArticlesList.length === 0) {
+        try {
+          const warnRes = await api.getWarningArticles({
+            indicator: cpkIndicator.value,
+            min_samples: warningMinSamples.value,
+            time_col: filterStore.selectedTimeCol,
+            phase: filterStore.selectedPhase,
+            max_cpk: warningMaxCpk.value
+          })
+          if (warnRes.data && warnRes.data.status === 'success') {
+            topArticlesList = warnRes.data.data || []
+          }
+        } catch (err) {
+          console.warn('Failed to pre-fetch warning articles for top 10 exclusion', err)
+        }
+      }
+      if (topArticlesList && topArticlesList.length > 0) {
+        const top10Articles = topArticlesList.slice(0, 10).map(a => a.article10).filter(Boolean)
+        if (top10Articles.length > 0) {
+          params.exclude_articles = top10Articles.join(',')
+        }
       }
     }
     const res = await api.getCpkTrend(params)
@@ -627,11 +581,32 @@ function handleExcludeTop10Change() {
   loadCpkTrend()
 }
 
-// 动态计算图表容器高度，防止 ECharts 机台过多时挤压
-const machineChartHeight = computed(() => {
-  const count = machines.value?.length || 0
-  return count > 0 ? `${Math.max(380, count * 28 + 40)}px` : '380px'
-})
+function handlePhaseChange(val) {
+  if (val && filterStore.selectedPhase !== val) {
+    filterStore.setSelectedPhase(val)
+  }
+  loadCpkTrend()
+  if (selectedTrendDate.value) {
+    loadWarningArticles()
+  }
+}
+
+watch(
+  [
+    () => filterStore.selectedPhase,
+    () => filterStore.selectedShift,
+    () => filterStore.selectedTimeCol,
+    () => filterStore.cpkIndicator
+  ],
+  () => {
+    loadCpkTrend()
+    if (selectedTrendDate.value) {
+      loadWarningArticles()
+      loadMachineProcessSankey()
+      loadLotCpkTrend()
+    }
+  }
+)
 
 // 防抖重型接口请求，防止拖动日期快速更新导致高并发拥堵
 let debounceTimer = null
@@ -645,7 +620,6 @@ function onTab1ArticleDrill(article) {
     resetTab1Article()
   } else {
     tab1SelectedArticle.value = article
-    selectedWorkcenter.value = null
     loadCpkTrend()
     loadLotCpkTrend()
   }
@@ -653,7 +627,6 @@ function onTab1ArticleDrill(article) {
 
 function resetTab1Article() {
   tab1SelectedArticle.value = null
-  selectedWorkcenter.value = null
   loadCpkTrend()
   loadLotCpkTrend()
 }
@@ -676,42 +649,19 @@ function handleDateSelect(date) {
   })
 }
 
-function toggleWorkcenterFilter(step) {
-  if (selectedWorkcenter.value === step) {
-    selectedWorkcenter.value = null
-  } else {
-    selectedWorkcenter.value = step
-  }
-}
-
-// ── 预警卡片 ──────────────────────────────────────────────────
-const insights = ref({})
-const insightsLoading = ref(false)
-const alerts = computed(() => insights.value.alerts ?? [])
-
-async function loadInsights() {
-  return // 已关闭预警卡片请求以提升性能
-}
-
-// ── 趋势数据 (对兼容性做桩函数处理) ─────────────────────────
-const trendData    = ref([])
-const trendLoading = ref(false)
-const trendError   = ref(null)
-
-async function loadTrend() {
-  // 产量与异常率已重构为 CPK，此处保留桩函数
-}
-
 // ── 预警规格列表 (CPK稳定值) ──────────────────────────────────────────────────
 const articles      = ref([])
+const isLatestDate  = ref(false)
 const articleLoading= ref(false) // 默认不处于 loading 状态，直到用户点击加载
 const articleError  = ref(null)
 const onlyDeclining = ref(true)
 const warningMinSamples = ref(30)
+const warningMaxCpk     = ref(0.9)
 
 async function loadWarningArticles() {
   if (!selectedTrendDate.value) {
     articles.value = []
+    isLatestDate.value = false
     return
   }
   articleLoading.value = true
@@ -722,15 +672,28 @@ async function loadWarningArticles() {
       only_declining: onlyDeclining.value,
       study_from: selectedTrendDate.value,
       study_to: selectedTrendDate.value,
-      min_samples: warningMinSamples.value
+      min_samples: warningMinSamples.value,
+      time_col: filterStore.selectedTimeCol,
+      phase: filterStore.selectedPhase,
+      max_cpk: warningMaxCpk.value
+    }
+    if (tab1SelectedArticle.value) {
+      params.article10 = tab1SelectedArticle.value
     }
     const res = await api.getWarningArticles(params)
-    articles.value = res.data.status === 'success' ? res.data.data : []
+    if (res.data && res.data.status === 'success') {
+      articles.value = res.data.data || []
+      isLatestDate.value = !!res.data.is_latest_date
+    } else {
+      articles.value = []
+      isLatestDate.value = false
+    }
     if (excludeTop10.value && !tab1SelectedArticle.value) {
       loadCpkTrend()
     }
   } catch (e) {
     articleError.value = '预警规格列表加载异常'
+    isLatestDate.value = false
   } finally {
     articleLoading.value = false
   }
@@ -749,25 +712,32 @@ const bestSankeyData = ref({ nodes: [], links: [] })
 const bestSankeyLoading = ref(false)
 const bestSankeyError = ref(null)
 const bestPathArticle = ref(null)
+const sankeyChartRef = ref(null)
+const bestSankeyChartRef = ref(null)
+
+function handleOpenSankeyZoom() {
+  if (machineTabActive.value === 'sankey_flow' && sankeyChartRef.value) {
+    sankeyChartRef.value.openZoomDialog()
+  } else if (machineTabActive.value === 'best_sankey_flow' && bestSankeyChartRef.value) {
+    bestSankeyChartRef.value.openZoomDialog()
+  }
+}
 
 async function loadMachineProcessSankey() {
-  if (!selectedTrendDate.value) {
+  if (!selectedTrendDate.value || !tab1SelectedArticle.value) {
     sankeyData.value = { nodes: [], links: [] }
     return
   }
-  const articleParam = tab1SelectedArticle.value || (articles.value[0]?.article10 ?? null)
-  if (!articleParam) {
-    sankeyData.value = { nodes: [], links: [] }
-    return
-  }
+  const articleParam = tab1SelectedArticle.value
   sankeyLoading.value = true
   sankeyError.value = null
   try {
+    const effectiveMinSamples = tab1SelectedArticle.value ? 1 : machineMinSamples.value
     const params = {
       article10: articleParam,
       indicator: cpkIndicator.value,
       target_date: selectedTrendDate.value,
-      min_samples: machineMinSamples.value
+      min_samples: effectiveMinSamples
     }
     const res = await api.getMachineProcessSankey(params)
     sankeyData.value = res.data.status === 'success' ? res.data.data : { nodes: [], links: [] }
@@ -778,8 +748,36 @@ async function loadMachineProcessSankey() {
   }
 }
 
+const paramRecommendationData = ref(null)
+const paramRecommendationLoading = ref(false)
+
+async function loadParamRecommendation() {
+  const articleParam = tab1SelectedArticle.value || bestPathArticle.value
+  if (!articleParam) {
+    paramRecommendationData.value = null
+    return
+  }
+  paramRecommendationLoading.value = true
+  try {
+    const params = {
+      article: articleParam,
+      indicator: cpkIndicator.value,
+      target_date: selectedTrendDate.value || undefined
+    }
+
+    const res = await api.getParamRecommendation(params)
+    paramRecommendationData.value = res.data && res.data.status === 'success' ? res.data : null
+  } catch (e) {
+    console.error('Failed to load parameter recommendation', e)
+    paramRecommendationData.value = null
+  } finally {
+    paramRecommendationLoading.value = false
+  }
+}
+
+
 async function loadMachineBestProcessSankey() {
-  const articleParam = bestPathArticle.value || tab1SelectedArticle.value || (articles.value[0]?.article10 ?? null)
+  const articleParam = tab1SelectedArticle.value || bestPathArticle.value
   if (!articleParam) {
     bestSankeyData.value = { nodes: [], links: [] }
     return
@@ -787,13 +785,15 @@ async function loadMachineBestProcessSankey() {
   bestSankeyLoading.value = true
   bestSankeyError.value = null
   try {
+    const effectiveMinSamples = (tab1SelectedArticle.value || bestPathArticle.value) ? 1 : machineMinSamples.value
     const params = {
       article10: articleParam,
       indicator: cpkIndicator.value,
-      min_samples: machineMinSamples.value
+      min_samples: effectiveMinSamples
     }
     const res = await api.getMachineBestProcessSankey(params)
     bestSankeyData.value = res.data.status === 'success' ? res.data.data : { nodes: [], links: [] }
+    loadParamRecommendation()
   } catch (e) {
     bestSankeyError.value = '全量最佳工序流转路径加载异常'
   } finally {
@@ -801,14 +801,16 @@ async function loadMachineBestProcessSankey() {
   }
 }
 
+
 // ── 选中规格关联物料批次 (Lot) 质量追溯 ─────────────────────────
 const lotCpkData = ref([])
 const lotUslValue = ref(100)
+const lotLslValue = ref(null)
 const lotCpkLoading = ref(false)
 const lotCpkError = ref(null)
 
 async function loadLotCpkTrend(customParams = {}) {
-  const articleParam = tab1SelectedArticle.value || (articles.value[0]?.article10 ?? null)
+  const articleParam = tab1SelectedArticle.value
   if (!articleParam || !selectedTrendDate.value) {
     lotCpkData.value = []
     return
@@ -838,7 +840,8 @@ async function loadLotCpkTrend(customParams = {}) {
     const res = await api.getLotCpkTrend(params)
     if (res.data.status === 'success') {
       lotCpkData.value = res.data.data
-      if (res.data.usl) lotUslValue.value = res.data.usl
+      if (res.data.usl !== undefined) lotUslValue.value = res.data.usl
+      lotLslValue.value = res.data.lsl !== undefined ? res.data.lsl : null
     } else {
       lotCpkData.value = []
     }
@@ -881,12 +884,53 @@ watch(
   }
 )
 
-// ── 机台 CPK 历史下钻弹窗状态 ────────────────────────────────────
-const trendDialogVisible = ref(false)
-const trendDialogMachine = ref('')
-const trendDialogWorkcenterCol = ref('')
-const trendDialogArticle10 = ref(null)
-const trendDialogMode = ref(null)
+// ── 成型机台 CGRS 参数变更记录弹窗状态 ──────────────────────────
+const WORKCENTER_COL_LABEL_MAP = {
+  gt_workcenter: '生胎成型GT',
+  ct_workcenter: '硫化CT',
+  tu_first_workcenter: '终检TU',
+  tread_workcenter: '胎面',
+  bead_workcenter: '胎圈',
+  inner_liner_workcenter: '内衬',
+  sidewall_workcenter: '胎侧',
+  first_breaker_workcenter: '带束层1',
+  second_breaker_workcenter: '带束层2',
+  first_ply_workcenter: '帘布层1',
+  second_ply_workcenter: '帘布层2',
+  wound_cap_ply1_workcenter: '冠带层1',
+  wound_cap_ply2_workcenter: '冠带层2',
+  tb_first_workcenter: '动平衡TB'
+}
+
+const cgrsDialogVisible = ref(false)
+const cgrsDialogMachine = ref('')
+const cgrsDialogDate = ref('')
+const cgrsDialogArticle = ref('')
+const cgrsDialogIndicator = ref('rfpp')
+const cgrsIsTopWarning = ref(false)
+const cgrsTopMachines = ref([])
+
+function handleOpenCgrs(payload) {
+  cgrsDialogMachine.value = payload.machine || ''
+  cgrsDialogDate.value = selectedTrendDate.value || payload.date || ''
+  cgrsDialogArticle.value = payload.article || tab1SelectedArticle.value || ''
+  cgrsDialogIndicator.value = payload.indicator || cpkIndicator.value || 'rfpp'
+  
+  const topList = payload.topWarningMachines || []
+  // 提取影响度为负的 Top 3 全局预警机台
+  const negMachines = topList
+    .map(m => (typeof m === 'string' ? m : (m.machine || '')).toUpperCase())
+    .filter(Boolean)
+  cgrsTopMachines.value = Array.from(new Set(negMachines)).slice(0, 3)
+  
+  const rank1 = topList[0]
+  const curMach = (payload.machine || '').toUpperCase()
+  const rank1Name = typeof rank1 === 'string' ? rank1.toUpperCase() : (rank1?.machine || '').toUpperCase()
+  const isRank1 = rank1Name && (rank1Name === curMach || curMach.includes(rank1Name) || rank1Name.includes(curMach))
+  cgrsIsTopWarning.value = !!isRank1
+  
+  cgrsDialogVisible.value = true
+}
 
 const combinationTreeDialogVisible = ref(false)
 const combinationTreeDialogRendered = ref(false)
@@ -901,248 +945,45 @@ function handleCombinationTreeDialogOpened() {
   combinationTreeDialogRendered.value = true
 }
 
-function handleOpenMachineTrend(payload) {
-  trendDialogMachine.value = payload.machine
-  trendDialogWorkcenterCol.value = payload.workcenterCol
-  trendDialogArticle10.value = payload.article10
-  trendDialogMode.value = payload.mode || null
-  trendDialogVisible.value = true
-}
-
-function handleSankeyNodeClick(payload) {
-  const articleParam = tab1SelectedArticle.value || (articles.value[0]?.article10 ?? null)
-  handleOpenMachineTrend({
-    machine: payload.machine,
-    workcenterCol: payload.workcenterCol,
-    article10: articleParam
-  })
-}
-
-
-// ── 工位机台排行 ──────────────────────────────────────────────
-const machines      = ref([])
-const machineLoading= ref(true)
-const machineError  = ref(null)
-
-async function loadMachines() {
-  machineLoading.value = true
-  machineError.value   = null
-  try {
-    const params = {
-      limit: 20,
-      min_yield: filterStore.minYieldThreshold,
-      sort_by: 'step_lift'
-    }
-    if (tab1SelectedArticle.value) {
-      params.article10 = tab1SelectedArticle.value
-    }
-    if (selectedWorkcenter.value) {
-      params.workcenter_col = selectedWorkcenter.value
-      if (filterStore.hasAnalysisPeriod && activePathTab.value) {
-        if (activePathTab.value.startsWith('anomaly_cluster_')) {
-          params.cluster_id = Number(activePathTab.value.replace('anomaly_cluster_', ''))
-          params.cluster_type = 'anomaly'
-        } else if (activePathTab.value.startsWith('normal_cluster_')) {
-          params.cluster_id = Number(activePathTab.value.replace('normal_cluster_', ''))
-          params.cluster_type = 'normal'
-        }
-      }
-    }
-    if (filterStore.studyRange && filterStore.studyRange.length === 2) {
-      params.study_from = filterStore.studyRange[0]
-      params.study_to   = filterStore.studyRange[1]
-    }
-    if (filterStore.baselineRange && filterStore.baselineRange.length === 2) {
-      params.baseline_from = filterStore.baselineRange[0]
-      params.baseline_to   = filterStore.baselineRange[1]
-    }
-    const res = await api.getMachines(params)
-    machines.value = res.data.status === 'success' ? res.data.data : []
-  } catch (e) {
-    machineError.value = '机台数据加载异常'
-  } finally {
-    machineLoading.value = false
-  }
-}
-
-// ── 工艺特征流转路径对比 ──────────────────────────────────────
-const pathsData = ref({})
-const pathsLoading = ref(false)
-const pathsError = ref(null)
-const activePathTab = ref('')
-
-async function loadPaths() {
-  return // 已暂时关闭聚类分析与路径对比
-}
-
-// ── 联合路径诊断 ──────────────────────────────────────────────
-const combinations = ref([])
-const combLoading = ref(false)
-
-async function loadCombinations() {
-  return // 已暂时关闭双机台联合分析
-}
-
-// 标签转换辅助
-function getPathTabName(key) {
-  if (key.startsWith('anomaly_cluster_')) {
-    return '🔴 故障簇 ' + key.replace('anomaly_cluster_', '')
-  } else if (key.startsWith('normal_cluster_')) {
-    return '🟢 常规簇 ' + key.replace('normal_cluster_', '')
-  }
-  return key
-}
-
-// 工序前缀辅助，用于机台标签着色
-function getStepPrefix(step) {
-  if (!step) return 'default'
-  // 取工序字母前缀（如 TB, CU, EX, CL, BA 等）
-  const match = step.match(/^([A-Za-z]+)/)
-  return match ? match[1].toUpperCase() : 'DEFAULT'
-}
-
-// Step Lift 单元格样式回调
-function pathCellClass({ row, column }) {
-  if (column.property === 'step_lift' && row.step_lift >= 1.5) {
-    return 'cell-lift-danger'
-  }
-  return ''
-}
-
-// 计算当前路径列表
-const currentPathList = computed(() => {
-  return pathsData.value[activePathTab.value] ?? []
-})
-
-// 异常富集机台警报
-const pathSuspects = computed(() => {
-  const suspectsList = []
-  Object.keys(pathsData.value).forEach(key => {
-    if (key.startsWith('anomaly_cluster_')) {
-      const clusterNum = key.replace('anomaly_cluster_', '')
-      const list = pathsData.value[key] ?? []
-      if (list.length > 0) {
-        let maxItem = list[0]
-        for (let i = 1; i < list.length; i++) {
-          if (list[i].step_lift > maxItem.step_lift) {
-            maxItem = list[i]
-          }
-        }
-        if (maxItem.step_lift >= 1.5) {
-          suspectsList.push({
-            cluster: '故障簇 ' + clusterNum,
-            step: maxItem.step,
-            machine: maxItem.machine,
-            lift: maxItem.step_lift
-          })
-        }
-      }
-    }
-  })
-  return suspectsList
-})
-
-// Smooth Scroll to Diagnostics Area
-function scrollToDiagnostics() {
-  const el = document.querySelector('.diagnostics-panel-section')
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-}
-
-// ── 跳转交互处理器 (点击联动至深度诊断) ─────────────────────────
-function handleMachineJump(row) {
-  if (!row) return
-  const wc = row.workcenter_col || ''
-  if (wc.includes('ccs') || wc.includes('gt') || wc.includes('ct')) {
-    ElMessage.warning(`提示：工序 ${wc.replace('_workcenter', '').toUpperCase()} 无对应物理物料批次，排除特定批次物料影响，系统已判定为设备零点精度漂移。`)
-  }
-  filterStore.setDiagnosticMachine(row.machine, row.workcenter_col, row.cluster ?? 0)
-  nextTick(() => {
-    scrollToDiagnostics()
-  })
-}
-
-function handleSelectMachine(data) {
-  if (!data) return
-  tab1SelectedArticle.value = data.article10
-  selectedWorkcenter.value = null
-  loadTrend()
-  loadMachines()
-  
-  handleMachineJump({
-    machine: data.machine,
-    workcenter_col: data.workcenter_col,
-    cluster: 0
-  })
-}
-
-function handleTableMachineJump(row) {
-  if (!row) return
-  const wcCol = row.step + '_workcenter'
-  if (wcCol.includes('ccs') || wcCol.includes('gt') || wcCol.includes('ct')) {
-    ElMessage.warning(`提示：工序 ${row.step.toUpperCase()} 无对应物理物料批次，排除特定批次物料影响，系统已判定为设备零点精度漂移。`)
-  }
-  let clusterId = 0
-  if (activePathTab.value.startsWith('anomaly_cluster_')) {
-    clusterId = Number(activePathTab.value.replace('anomaly_cluster_', ''))
-  }
-  filterStore.setDiagnosticMachine(row.machine, wcCol, clusterId)
-  nextTick(() => {
-    scrollToDiagnostics()
-  })
-}
 
 // ── 监听状态变动刷新数据 ──────────────────────────────────────
-
 
 watch(
   () => filterStore.minYieldThreshold,
   () => {
-    selectedWorkcenter.value = null
     selectedTrendDate.value = null
     articles.value = []
     onlyBelowMean.value = false
-    debounceLoad(() => {
-      loadInsights()
-      loadPaths()
-      loadCombinations()
-    }, 300)
-  }
-)
-
-watch(
-  () => filterStore.hasAnalysisPeriod,
-  () => {
-    selectedWorkcenter.value = null
   }
 )
 
 watch(
   [() => filterStore.baselineRange, () => filterStore.studyRange],
   () => {
-    selectedWorkcenter.value = null
     selectedTrendDate.value = null
     articles.value = []
     onlyBelowMean.value = false
     loadCpkTrend()
-    debounceLoad(() => {
-      loadInsights()
-      loadPaths()
-      loadCombinations()
-    }, 300)
   }
 )
 
-watch(cpkIndicator, (newVal) => {
-  if (newVal === 'cony') {
-    machineTabActive.value = 'best_sankey_flow'
-  }
+watch(cpkIndicator, () => {
   if (selectedTrendDate.value) {
-    if (newVal !== 'cony') {
-      loadWarningArticles()
-      loadLotCpkTrend()
-    }
+    loadWarningArticles()
+    loadLotCpkTrend()
+  }
+})
+
+watch(() => filterStore.selectedTimeCol, () => {
+  loadCpkTrend()
+  if (selectedTrendDate.value) {
+    loadWarningArticles()
+    loadLotCpkTrend()
+  }
+  if (machineTabActive.value === 'sankey_flow') {
+    loadMachineProcessSankey()
+  } else if (machineTabActive.value === 'best_sankey_flow') {
+    loadMachineBestProcessSankey()
   }
 })
 
@@ -1164,18 +1005,6 @@ watch(() => bestPathArticle.value, (newVal) => {
   }
 })
 
-// 已移除对应排序控制器监听
-
-watch(selectedWorkcenter, () => {
-  loadMachines()
-})
-
-watch(activePathTab, () => {
-  if (selectedWorkcenter.value) {
-    loadMachines()
-  }
-})
-
 watch(machineTabActive, (newTab) => {
   if (newTab === 'sankey_flow') {
     loadMachineProcessSankey()
@@ -1184,7 +1013,7 @@ watch(machineTabActive, (newTab) => {
   }
 })
 
-// 全量规格列表 (支持 Tab 3 任意规格搜索)
+// 全量规格列表
 const allArticles = ref([])
 
 async function loadAllArticles() {
@@ -1202,10 +1031,7 @@ async function loadAllArticles() {
 onMounted(async () => {
   await Promise.all([
     loadCpkTrend(),
-    loadAllArticles(),
-    loadInsights(),
-    loadPaths(),
-    loadCombinations()
+    loadAllArticles()
   ])
 })
 
@@ -1337,163 +1163,130 @@ onMounted(async () => {
   text-decoration: underline;
 }
 
-.row4-custom-tabs {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.row4-custom-tabs :deep(.el-tabs__header) {
-  margin: 0;
-  padding: 12px 20px;
-  background: #f8fafc;
-  border-bottom: 1px solid var(--c-border-light);
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
-}
-.row4-custom-tabs :deep(.el-tabs__nav-wrap::after) {
-  display: none;
-}
-.row4-custom-tabs :deep(.el-tabs__active-bar) {
-  display: none;
-}
-.row4-custom-tabs :deep(.el-tabs__item) {
-  font-size: 13px;
-  font-weight: 600;
-  height: 32px;
-  line-height: 32px;
-  padding: 0 16px !important;
-  border-radius: 6px;
-  color: var(--c-text-secondary);
-  transition: all 0.2s ease;
-}
-.row4-custom-tabs :deep(.el-tabs__item.is-active) {
-  background-color: var(--c-accent-light) !important;
-  color: var(--c-accent) !important;
-}
-.row4-custom-tabs :deep(.el-tabs__item.is-disabled) {
-  color: var(--c-text-muted) !important;
-  background: transparent !important;
-  cursor: not-allowed !important;
-}
-.row4-custom-tabs :deep(.el-tabs__content) {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-.row4-right-scrollable {
-  border-radius: var(--radius-md);
-}
-.row4-right-scrollable::-webkit-scrollbar {
-  width: 6px;
-}
-.row4-right-scrollable::-webkit-scrollbar-thumb {
-  background: var(--c-border);
-  border-radius: 3px;
-}
-.row4-right-scrollable::-webkit-scrollbar-thumb:hover {
-  background: var(--c-text-muted);
-}
 
-/* ── 聚类子簇选择器（下划线样式）──────────────── */
-.cluster-tab-group {
-  display: flex;
-  flex-wrap: wrap;
+
+/* ── 数据时间胶囊徽章样式 (类似服务状态胶囊) ── */
+.data-update-capsule {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-}
-.cluster-tab-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 10px;
-  font-size: 12.5px;
-  color: var(--c-text-muted);
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  transition: color .2s, border-color .2s;
-  line-height: 1.4;
-}
-.cluster-tab-btn:hover {
-  color: var(--c-text);
-}
-.cluster-tab-btn.active-anomaly {
-  color: #dc2626;
-  font-weight: 600;
-  border-bottom-color: #dc2626;
-}
-.cluster-tab-btn.active-normal {
-  color: #16a34a;
-  font-weight: 600;
-  border-bottom-color: #16a34a;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 3px 12px;
+  border-radius: 20px;
+  box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
-/* ── 首选机台彩色标签（按工序着色）────────────── */
-.machine-tag-btn {
-  display: inline-block;
-  border: none;
-  cursor: pointer;
-  padding: 2px 8px;
-  border-radius: 4px;
+.capsule-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.9); }
+}
+
+.capsule-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.capsule-val {
   font-size: 12px;
   font-weight: 600;
   font-family: 'JetBrains Mono', monospace;
-  transition: opacity .15s;
-}
-.machine-tag-btn:hover { opacity: .75; }
-
-/* 工序颜色 - 可扩展 */
-.step-TB  { background: #dbeafe; color: #1d4ed8; }
-.step-CU  { background: #ede9fe; color: #6d28d9; }
-.step-EX  { background: #ffedd5; color: #c2410c; }
-.step-CL  { background: #cffafe; color: #0e7490; }
-.step-BA  { background: #dcfce7; color: #15803d; }
-.step-PL  { background: #fce7f3; color: #be185d; }
-.step-LI  { background: #fef9c3; color: #a16207; }
-.step-WA  { background: #f0fdf4; color: #166534; }
-.step-DE  { background: #fff7ed; color: #9a3412; }
-.step-DEFAULT { background: #f1f5f9; color: #475569; }
-
-/* ── Step Lift Badge ────────────────────────── */
-.lift-badge-danger {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 4px;
-  background: #fef2f2;
-  color: #dc2626;
-  font-weight: 700;
-  font-size: 12px;
-}
-.lift-badge-normal {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--c-text);
-  font-size: 12px;
+  color: #1e293b;
 }
 
-/* ── 整格底色高亮（Step Lift ≥ 1.5）────────── */
-:deep(.cell-lift-danger) {
-  background-color: #fef2f2 !important;
+/* ── 剔除异常值按钮高亮样式 (与 Main Hall 选中橙色/黄色主题保持一致) ── */
+.exclude-outliers-btn {
+  margin-left: 10px;
+  font-weight: 500 !important;
+  border-radius: 20px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #475569 !important;
 }
 
-/* ── 可点击工序链接样式 ── */
-.step-interactive-link {
-  color: var(--c-accent, #3b82f6);
-  cursor: pointer;
-  font-weight: 600;
+.exclude-outliers-btn:hover {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #b45309 !important;
+}
+
+.exclude-outliers-btn.is-active {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  border-color: #d97706 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3) !important;
+  font-weight: 700 !important;
+}
+
+.exclude-outliers-btn.is-active:hover {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.4) !important;
+}
+
+/* ── 核心规格行动表黄色风格统一控件 ── */
+.spec-focus-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-.step-interactive-link:hover {
-  text-decoration: underline;
-}
-.step-interactive-link.is-active {
-  background: var(--c-accent-light, #e0f2fe);
-  color: var(--c-accent, #2563eb);
-  padding: 2px 8px;
-  border-radius: 4px;
+  height: 22px;
+  line-height: 20px;
+  padding: 0 9px;
+  border-radius: 11px;
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
   font-weight: 700;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  box-shadow: 0 1px 2px rgba(245, 158, 11, 0.08);
+}
+
+.btn-warm-outline {
+  background: #ffffff !important;
+  border: 1px solid #fde68a !important;
+  color: #92400e !important;
+  font-weight: 600 !important;
+  border-radius: 14px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.btn-warm-outline:hover {
+  background: #fffbeb !important;
+  border-color: #f59e0b !important;
+  color: #78350f !important;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.15) !important;
+  transform: translateY(-1px);
+}
+
+.btn-warm-primary {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  border: 1px solid #d97706 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.btn-warm-primary:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%) !important;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35) !important;
+  transform: translateY(-1px);
 }
 </style>

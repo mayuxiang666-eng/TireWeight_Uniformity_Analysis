@@ -5,6 +5,13 @@ export const useFilterStore = defineStore('filter', () => {
   // 当前选中的规格型号（仅限 Tab 1 本地趋势下钻过滤，已与 Tab 2 & 3 诊断解耦）
   const selectedArticle = ref(null)
 
+  // 全局期别筛选状态：'all' | 'p3' | 'p4'
+  const selectedPhase = ref('all')
+
+  function setSelectedPhase(val) {
+    selectedPhase.value = val
+  }
+
   // 全局日期范围 [dateFrom, dateTo]
   const dateRange = ref(null)
 
@@ -13,6 +20,51 @@ export const useFilterStore = defineStore('filter', () => {
 
   // 全局 CPK 指标切换状态：'rfpp' | 'rfh1'
   const cpkIndicator = ref('rfpp')
+
+  // 全局时间维度选择（默认：终检 TU 时间）
+  const selectedTimeCol = ref('tu_first_loc_timestamp')
+
+  const timeColOptions = [
+    { label: '终检 TU 时间 (默认)', value: 'tu_first_loc_timestamp' },
+    { label: '成型 GT 时间', value: 'gt_loc_timestamp' },
+    { label: '硫化 CT 时间', value: 'ct_loc_timestamp' },
+    { label: '动平衡 TB 时间', value: 'tb_first_shift_date' },
+    { label: '胎面时间', value: 'tread_loc_timestamp' },
+    { label: '胎圈时间', value: 'bead_loc_timestamp' },
+    { label: '内衬时间', value: 'inner_liner_loc_timestamp' },
+    { label: '胎侧时间', value: 'sidewall_loc_timestamp' },
+    { label: '带束层1时间', value: 'first_breaker_loc_timestamp' },
+    { label: '带束层2时间', value: 'second_breaker_loc_timestamp' },
+    { label: '帘布层1时间', value: 'first_ply_loc_timestamp' },
+    { label: '帘布层2时间', value: 'second_ply_loc_timestamp' },
+    { label: '冠带层1时间', value: 'wound_cap_ply1_loc_timestamp' },
+    { label: '冠带层2时间', value: 'wound_cap_ply2_loc_timestamp' }
+  ]
+
+  function setSelectedTimeCol(val) {
+    selectedTimeCol.value = val
+  }
+
+  // 全局班组选择（默认：全天 08-08 'all'）
+  const selectedShift = ref('all')
+
+  const shiftOptions = [
+    { label: '全天 (08:00-08:00)', value: 'all' },
+    { label: '早班 (08:00-16:00)', value: 'morning' },
+    { label: '中班 (16:00-24:00)', value: 'middle' },
+    { label: '晚班 (24:00-08:00)', value: 'night' }
+  ]
+
+  function setSelectedShift(val) {
+    selectedShift.value = val
+  }
+
+  // 数据最后更新时间
+  const dataUpdateTime = ref('')
+
+  function setDataUpdateTime(val) {
+    dataUpdateTime.value = val
+  }
 
   // 胎重指标的偏差公差限 (%)，默认为 0.8
   const weightTolerance = ref(0.8)
@@ -119,10 +171,17 @@ export const useFilterStore = defineStore('filter', () => {
     selectedMachineName.value = null
     selectedMachineWorkcenter.value = null
     selectedMachineCluster.value = 0
+    selectedPhase.value = 'all'
+    selectedShift.value = 'all'
   }
 
   return {
     selectedArticle,
+    selectedPhase,
+    setSelectedPhase,
+    selectedShift,
+    shiftOptions,
+    setSelectedShift,
     dateRange,
     trendGranularity,
     isDrillDown,
@@ -137,11 +196,16 @@ export const useFilterStore = defineStore('filter', () => {
     selectedMachineCluster,
     hasAnalysisPeriod,
     cpkIndicator,
+    selectedTimeCol,
+    timeColOptions,
     weightTolerance,
+    dataUpdateTime,
+    setDataUpdateTime,
     setArticle,
     setDateRange,
     setGranularity,
     setCpkIndicator,
+    setSelectedTimeCol,
     drillDown,
     resetDrillDown,
     setBaselineRange,

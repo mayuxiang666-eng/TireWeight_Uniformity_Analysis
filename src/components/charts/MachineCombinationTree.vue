@@ -4,9 +4,20 @@
     <div v-show="!isAllControlsHidden" class="filter-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px; background: var(--el-fill-color-light); border-radius: 6px; flex-wrap: wrap;">
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
         <!-- 根节点 Level 1 -->
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 500;">根节点 (L1):</span>
-          <el-select v-model="level1" placeholder="选择根节点" size="small" style="width: 140px;" clearable @change="handleLevel1Change">
+        <div class="nav-control-group stripe-pill">
+          <div class="nav-label-badge">
+            <span class="nav-control-label">L1 根节点</span>
+          </div>
+          <el-select
+            v-model="level1"
+            placeholder="选择根节点"
+            size="small"
+            class="header-nav-select"
+            popper-class="header-select-popper"
+            style="width: 140px;"
+            clearable
+            @change="handleLevel1Change"
+          >
             <el-option
               v-for="item in level1Options"
               :key="item.value"
@@ -18,9 +29,20 @@
         </div>
 
         <!-- 中间层 Level 2 -->
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 500;">中间层 (L2):</span>
-          <el-select v-model="level2" placeholder="选择中间层" size="small" style="width: 140px;" clearable @change="handleLevel2Change">
+        <div class="nav-control-group stripe-pill">
+          <div class="nav-label-badge">
+            <span class="nav-control-label">L2 中间层</span>
+          </div>
+          <el-select
+            v-model="level2"
+            placeholder="选择中间层"
+            size="small"
+            class="header-nav-select"
+            popper-class="header-select-popper"
+            style="width: 140px;"
+            clearable
+            @change="handleLevel2Change"
+          >
             <el-option
               v-for="item in level2Options"
               :key="item.value"
@@ -32,9 +54,20 @@
         </div>
 
         <!-- 子层 Level 3 -->
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 500;">子层 (L3):</span>
-          <el-select v-model="level3" placeholder="选择子层" size="small" style="width: 140px;" clearable @change="handleLevel3Change">
+        <div class="nav-control-group stripe-pill">
+          <div class="nav-label-badge">
+            <span class="nav-control-label">L3 子层</span>
+          </div>
+          <el-select
+            v-model="level3"
+            placeholder="选择子层"
+            size="small"
+            class="header-nav-select"
+            popper-class="header-select-popper"
+            style="width: 140px;"
+            clearable
+            @change="handleLevel3Change"
+          >
             <el-option
               v-for="item in level3Options"
               :key="item.value"
@@ -46,9 +79,20 @@
         </div>
 
         <!-- 末端层 Level 4 -->
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 500;">末端层 (L4):</span>
-          <el-select v-model="level4" placeholder="选择末端层" size="small" style="width: 140px;" clearable @change="handleLevel4Change">
+        <div class="nav-control-group stripe-pill">
+          <div class="nav-label-badge">
+            <span class="nav-control-label">L4 末端层</span>
+          </div>
+          <el-select
+            v-model="level4"
+            placeholder="选择末端层"
+            size="small"
+            class="header-nav-select"
+            popper-class="header-select-popper"
+            style="width: 140px;"
+            clearable
+            @change="handleLevel4Change"
+          >
             <el-option
               v-for="item in level4Options"
               :key="item.value"
@@ -61,7 +105,7 @@
 
         <!-- 快速反转 -->
         <el-button type="primary" size="small" plain @click="invertHierarchy">
-          🔄 快速反转
+          快速反转
         </el-button>
         
         <!-- 查看近三天数据 Checkbox -->
@@ -71,7 +115,7 @@
           style="margin-left: 16px; font-weight: 600;"
           @change="handleShowLastThreeDaysChange"
         >
-          📅 查看近三天数据 ({{ props.targetDate }})
+          查看近三天数据 ({{ props.targetDate }})
         </el-checkbox>
 
         <!-- 全部隐藏按钮 -->
@@ -82,7 +126,7 @@
           style="margin-left: 12px; font-weight: 600;"
           @click="isAllControlsHidden = true"
         >
-          🙈 全部隐藏
+          全部隐藏
         </el-button>
       </div>
 
@@ -105,7 +149,7 @@
           style="font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
           @click="isAllControlsHidden = false"
         >
-          👁️ 恢复显示控制面板
+          恢复显示控制面板
         </el-button>
       </div>
 
@@ -119,22 +163,22 @@
       </div>
 
       <div v-else-if="!paths || paths.length === 0 || studyColumns.length === 0" class="empty-overlay" style="height: 100%; display: flex; align-items: center; justify-content: center;">
-        <el-empty :description="studyColumns.length === 0 ? '请至少选择一个层级工段进行分析' : '当前日期范围及规格下暂无工序流转组合数据'" :image-size="60" />
+        <el-empty :description="studyColumns.length === 0 ? '请至少选择一个层级工段进行分析' : '当前暂无工序流转组合数据（若节点未显示或节点过少，请降低样本门槛）'" :image-size="60" />
       </div>
 
       <template v-else>
         <!-- 决策树信息提示 -->
-        <div v-show="!isAllControlsHidden" style="font-size: 11px; background: var(--el-color-primary-light-9); padding: 6px 12px; border-radius: 4px; border: 1px solid var(--el-color-primary-light-8); color: var(--el-color-primary); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+        <div v-show="!isAllControlsHidden" style="font-size: 11px; background: #fffbeb; padding: 6px 12px; border-radius: 6px; border: 1px solid #fde68a; color: #b45309; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
           <span>
-            🌳 <strong>排列组合路径分析：</strong> 
+            <strong>排列组合路径分析：</strong> 
             包含工段从左到右依次为: <strong>{{ studyColumnsFriendly }}</strong>
-            <span v-if="sortedTableData.length > 10" style="margin-left: 12px; color: var(--el-text-color-secondary);">
-              💡 <strong>提示:</strong> 路径较多，可在右侧图表中【上下滚动】查看完整树结构。
+            <span style="margin-left: 12px; color: #92400e;">
+              💡 <strong>提示：</strong>若节点未显示或节点过少，请降低样本门槛。
             </span>
           </span>
           <div>
             <span>
-              📊 决策树叶子路径数: <strong>{{ sortedTableData.length }}</strong> | 
+              决策树叶子路径数: <strong>{{ sortedTableData.length }}</strong> | 
               总记录数: <strong>{{ totalLotsCount }}</strong>
             </span>
           </div>
@@ -173,10 +217,10 @@
                       <strong>计算逻辑：</strong><br/>
                       通过控制变量法（消除其他工序机台的干扰），评估单个机台在相同工序搭配下，相比其他替代机台对 CPK 的提升 or降低程度（贡献度），结合该机台的产量占比得到全局影响分。负值越大，说明对全局质量拖累越严重。<br/><br/>
                       <strong>核心计算公式：</strong><br/>
-                      <code>影响分 (Impact Score) = 贡献度 × 产量占比</code><br/>
+                      <code>影响分 (Impact Score) = 贡献度 × 产量平方根平滑占比</code><br/>
                       <code>贡献度 (Contribution) = 机台平均 CPK - 对照基准 CPK</code><br/>
-                      <code>产量占比 (Volume) = 机台产量 / 全局总产量</code><br/>
-                      <span style="font-size: 11px; color: #94a3b8;">* 对照基准 CPK 是将相同搭配下其他替代机台的 CPK 按产量二次加权计算得出。</span>
+                      <code>产量平方根平滑占比 = sqrt(机台产量) / sum(sqrt(各机台产量))</code><br/>
+                      <span style="font-size: 11px; color: #94a3b8;">* 采用平方根对产量进行平滑，避免大流量机台过度遮盖严重异常机台。</span>
                     </div>
                   </template>
                   <el-icon class="help-icon" style="cursor: pointer; color: var(--c-text-muted);"><QuestionFilled /></el-icon>
@@ -193,18 +237,8 @@
             </div>
 
             <div v-show="!isCardCollapsed" style="font-size: 11px; display: flex; flex-direction: column; gap: 8px;">
-              <!-- 表现最差机台 -->
-              <div style="display: flex; flex-direction: column; gap: 2px;">
-                <span style="color: var(--el-text-color-secondary);">表现最差机台 (Worst Machine):</span>
-                <div v-if="globalAnalysis.worstMachine" style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                  <el-tag size="small" type="danger" effect="plain" style="font-weight: bold;">{{ globalAnalysis.worstMachine.machine }}</el-tag>
-                  <span style="color: #ef4444; font-weight: 600;">(CPK: {{ globalAnalysis.worstMachine.avgCpk.toFixed(2) }})</span>
-                </div>
-                <span v-else style="color: var(--el-text-color-placeholder);">-</span>
-              </div>
-
               <!-- 最大全局影响机台 -->
-              <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--el-border-color-lighter); padding-top: 6px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="color: var(--el-text-color-secondary);">最大全局影响机台 (Critical):</span>
                 <div v-if="globalAnalysis.criticalMachine" style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
                   <el-tag size="small" type="danger" style="font-weight: bold;">{{ globalAnalysis.criticalMachine.machine }}</el-tag>
@@ -223,7 +257,8 @@
                         <div style="font-size: 11px; line-height: 1.5;">
                           <div style="font-weight:bold;margin-bottom:2px">机台: {{ m.machine }}</div>
                           <div>控制变量后负面贡献度: <strong style="color:#ef4444">{{ m.contribution.toFixed(2) }}</strong></div>
-                          <div>流量占比 (Volume): <strong>{{ (m.volume * 100).toFixed(1) }}%</strong></div>
+                          <div>流量占比 (实际): <strong>{{ (m.volume * 100).toFixed(1) }}%</strong> <span style="font-size:10px;color:#94a3b8;">(N={{ m.machTires }})</span></div>
+                          <div>平方根平滑占比: <strong>{{ (m.sqrtVolumeShare * 100).toFixed(1) }}%</strong></div>
                           <div>影响指数 (Impact): <strong style="color:#ef4444">{{ m.impactScore.toFixed(3) }}</strong></div>
                         </div>
                       </template>
@@ -259,7 +294,7 @@
               :disabled="zoomScale <= 0.5"
               @click="zoomScale = Math.max(0.5, Number((zoomScale - 0.1).toFixed(1)))"
             >
-              ➖
+              -
             </el-button>
             <el-button 
               type="text" 
@@ -276,19 +311,35 @@
               :disabled="zoomScale >= 2.0"
               @click="zoomScale = Math.min(2.0, Number((zoomScale + 0.1).toFixed(1)))"
             >
-              ➕
+              +
             </el-button>
           </div>
 
           <!-- 视图展示区域 (设置 X、Y 轴滚动条溢出) -->
-          <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: #ffffff;">
-            <!-- 树状决策图 (高度自适应树叶子数，且绑定 ref 容器获取实时宽高) -->
-            <div ref="chartWrapperRef" :style="{ width: (100 * zoomScale) + '%', minWidth: (1200 * zoomScale) + 'px', height: '100%', minHeight: '200px' }">
-              <v-chart
-                :option="chartOption"
-                autoresize
-                :style="{ width: '100%', height: treeChartHeight + 'px' }"
-              />
+          <div style="flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: #ffffff;">
+            <!-- 树状决策图容器：采用 CSS transform 矢量整体等比例缩放 -->
+            <div 
+              :style="{ 
+                width: zoomScale <= 1.0 ? '100%' : (100 * zoomScale) + '%', 
+                height: (treeChartHeight * zoomScale + 40) + 'px', 
+                overflow: 'hidden' 
+              }"
+            >
+              <div 
+                ref="chartWrapperRef" 
+                :style="{ 
+                  transform: `scale(${zoomScale})`, 
+                  transformOrigin: '0 0', 
+                  width: (100 / zoomScale) + '%', 
+                  height: treeChartHeight + 'px' 
+                }"
+              >
+                <v-chart
+                  :option="chartOption"
+                  autoresize
+                  :style="{ width: '100%', height: treeChartHeight + 'px' }"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -306,6 +357,7 @@ import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { Loading } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
+import { calcCpk, calcCombinedCpk } from '../../composables/useCpk.js'
 
 use([GraphChart, TooltipComponent, CanvasRenderer])
 
@@ -371,43 +423,50 @@ const wrapperHeight = ref(600)
 let resizeObserver = null
 
 // 工段备选项选项，对应后台列名与中文映射
-const workcenterOptions = [
+const workcenterOptions = computed(() => [
   { value: 'gt_workcenter', label: '生胎成型 (GT)' },
   { value: 'ct_workcenter', label: '硫化 (CT)' },
   { value: 'tu_first_workcenter', label: '终检 TU' },
-  { value: 'tb_first_workcenter', label: '动平衡 TB' }
-]
+  { 
+    value: 'tb_first_workcenter', 
+    label: props.indicator === 'weight' ? '动平衡 TB' : '动平衡 TB (仅胎重)' 
+  }
+])
 
 const level1 = ref('gt_workcenter')
 const level2 = ref('ct_workcenter')
 const level3 = ref('tu_first_workcenter')
-const level4 = ref('tb_first_workcenter')
+const level4 = ref(props.indicator === 'weight' ? 'tb_first_workcenter' : null)
+
+const isTbDisabled = (val) => {
+  return props.indicator !== 'weight' && val === 'tb_first_workcenter'
+}
 
 const level1Options = computed(() => {
-  return workcenterOptions.map(item => ({
+  return workcenterOptions.value.map(item => ({
     ...item,
-    disabled: item.value === level2.value || item.value === level3.value || item.value === level4.value
+    disabled: isTbDisabled(item.value) || item.value === level2.value || item.value === level3.value || item.value === level4.value
   }))
 })
 
 const level2Options = computed(() => {
-  return workcenterOptions.map(item => ({
+  return workcenterOptions.value.map(item => ({
     ...item,
-    disabled: item.value === level1.value || item.value === level3.value || item.value === level4.value
+    disabled: isTbDisabled(item.value) || item.value === level1.value || item.value === level3.value || item.value === level4.value
   }))
 })
 
 const level3Options = computed(() => {
-  return workcenterOptions.map(item => ({
+  return workcenterOptions.value.map(item => ({
     ...item,
-    disabled: item.value === level1.value || item.value === level2.value || item.value === level4.value
+    disabled: isTbDisabled(item.value) || item.value === level1.value || item.value === level2.value || item.value === level4.value
   }))
 })
 
 const level4Options = computed(() => {
-  return workcenterOptions.map(item => ({
+  return workcenterOptions.value.map(item => ({
     ...item,
-    disabled: item.value === level1.value || item.value === level2.value || item.value === level3.value
+    disabled: isTbDisabled(item.value) || item.value === level1.value || item.value === level2.value || item.value === level3.value
   }))
 })
 
@@ -417,38 +476,38 @@ function resolveConflicts(changedLevel) {
   if (changedLevel === 1) {
     if (!level1.value) return
     if (level2.value === level1.value) {
-      level2.value = options.find(o => o !== level1.value && o !== level3.value && o !== level4.value)
+      level2.value = options.find(o => o !== level1.value && o !== level3.value && o !== level4.value && !isTbDisabled(o))
     } else if (level3.value === level1.value) {
-      level3.value = options.find(o => o !== level1.value && o !== level2.value && o !== level4.value)
+      level3.value = options.find(o => o !== level1.value && o !== level2.value && o !== level4.value && !isTbDisabled(o))
     } else if (level4.value === level1.value) {
-      level4.value = options.find(o => o !== level1.value && o !== level2.value && o !== level3.value)
+      level4.value = options.find(o => o !== level1.value && o !== level2.value && o !== level3.value && !isTbDisabled(o))
     }
   } else if (changedLevel === 2) {
     if (!level2.value) return
     if (level1.value === level2.value) {
-      level1.value = options.find(o => o !== level2.value && o !== level3.value && o !== level4.value)
+      level1.value = options.find(o => o !== level2.value && o !== level3.value && o !== level4.value && !isTbDisabled(o))
     } else if (level3.value === level2.value) {
-      level3.value = options.find(o => o !== level1.value && o !== level2.value && o !== level4.value)
+      level3.value = options.find(o => o !== level1.value && o !== level2.value && o !== level4.value && !isTbDisabled(o))
     } else if (level4.value === level2.value) {
-      level4.value = options.find(o => o !== level1.value && o !== level2.value && o !== level3.value)
+      level4.value = options.find(o => o !== level1.value && o !== level2.value && o !== level3.value && !isTbDisabled(o))
     }
   } else if (changedLevel === 3) {
     if (!level3.value) return
     if (level1.value === level3.value) {
-      level1.value = options.find(o => o !== level2.value && o !== level3.value && o !== level4.value)
+      level1.value = options.find(o => o !== level2.value && o !== level3.value && o !== level4.value && !isTbDisabled(o))
     } else if (level2.value === level3.value) {
-      level2.value = options.find(o => o !== level1.value && o !== level3.value && o !== level4.value)
+      level2.value = options.find(o => o !== level1.value && o !== level3.value && o !== level4.value && !isTbDisabled(o))
     } else if (level4.value === level3.value) {
-      level4.value = options.find(o => o !== level1.value && o !== level2.value && o !== level3.value)
+      level4.value = options.find(o => o !== level1.value && o !== level2.value && o !== level3.value && !isTbDisabled(o))
     }
   } else if (changedLevel === 4) {
     if (!level4.value) return
     if (level1.value === level4.value) {
-      level1.value = options.find(o => o !== level2.value && o !== level3.value && o !== level4.value)
+      level1.value = options.find(o => o !== level2.value && o !== level3.value && o !== level4.value && !isTbDisabled(o))
     } else if (level2.value === level4.value) {
-      level2.value = options.find(o => o !== level1.value && o !== level3.value && o !== level4.value)
+      level2.value = options.find(o => o !== level1.value && o !== level3.value && o !== level4.value && !isTbDisabled(o))
     } else if (level3.value === level4.value) {
-      level3.value = options.find(o => o !== level1.value && o !== level2.value && o !== level4.value)
+      level3.value = options.find(o => o !== level1.value && o !== level2.value && o !== level4.value && !isTbDisabled(o))
     }
   }
 }
@@ -495,6 +554,7 @@ const loading = ref(false)
 const error = ref(null)
 const paths = ref([])
 const uslVal = ref(100.0)
+const lslVal = ref(null)
 
 const studyColumns = computed(() => {
   return [level1.value, level2.value, level3.value, level4.value].filter(Boolean)
@@ -511,141 +571,58 @@ const totalLotsCount = computed(() => {
 
 // 工序列友情中文名字
 const wcFriendlyName = (colName) => {
-  const found = workcenterOptions.find(o => o.value === colName)
+  const found = workcenterOptions.value ? workcenterOptions.value.find(o => o.value === colName) : null
   return found ? found.label.split(' ')[0] : colName
 }
 
-// ── 方案一：全局机台贡献分析 (Global Contribution Analysis with Controlled Baseline) ──
+// ── 全局机台贡献分析 (由后端 get_top_warning_machines 统一驱动) ──
+const topWarningMachinesList = ref([])
+
+async function fetchTopWarningData() {
+  if (!props.selectedArticle || !props.targetDate) {
+    topWarningMachinesList.value = []
+    return
+  }
+  try {
+    const res = await api.getTopWarningMachines({
+      spec: props.selectedArticle,
+      indicator: props.indicator,
+      target_date: props.targetDate,
+      n: 5,
+      days: 1,
+      min_samples: props.minSamples
+    })
+    const data = res?.data || res
+    if (data && data.status === 'success' && data.data) {
+      topWarningMachinesList.value = data.data[props.targetDate] || []
+    }
+  } catch (err) {
+    console.error('Failed to fetch top warning machines in combination tree:', err)
+  }
+}
+
 const globalAnalysis = computed(() => {
-  const data = sortedTableData.value || []
-  const cols = studyColumns.value || []
-  if (data.length === 0 || cols.length === 0) return null
+  if (!topWarningMachinesList.value || topWarningMachinesList.value.length === 0) return null
 
-  // 1. 全局加权 CPK (改用合并方差公式，计算总体综合 CPK)
-  const globalAvgCpk = aggregateNodeStats(data).cpk
+  const list = topWarningMachinesList.value.map(item => ({
+    machine: item.machine,
+    workcenterCol: item.workcenter_col,
+    impactScore: item.impact_score,
+    contribution: item.impact_score,
+    volume: 0,
+    sqrtVolumeShare: 0,
+    machTires: 0
+  }))
 
-  // 计算全局总产量 (作为分量占比的分母)
-  const totalTires = data.reduce((acc, p) => acc + p.lot_cnt, 0)
-
-  // 2. 查找所有出现在活跃层级中的唯一机台
-  const machinesSet = new Set()
-  data.forEach(p => {
-    cols.forEach(col => {
-      if (p[col]) {
-        machinesSet.add(p[col])
-      }
-    })
-  })
-
-  // 3. 计算每个机台的 Avg CPK, Controlled Baseline, Contribution, Volume, Impact Score
-  const machineList = []
-  machinesSet.forEach(mach => {
-    let machTires = 0
-    const matchingRows = []
-
-    // 按搭档组合分组，用于消除搭档混淆变量
-    const partnerGroups = {}
-
-    data.forEach(p => {
-      const matchedCols = cols.filter(col => p[col] === mach)
-      if (matchedCols.length > 0) {
-        machTires += p.lot_cnt
-        matchingRows.push(p)
-
-        // 针对当前机台出现的每一个工段，提取其搭档组合 Key
-        matchedCols.forEach(mCol => {
-          const partnerParts = cols.map(c => c === mCol ? '*' : (p[c] || '*'))
-          const partnerKey = partnerParts.join('_')
-
-          if (!partnerGroups[partnerKey]) {
-            partnerGroups[partnerKey] = {
-              mCol: mCol,
-              partnerParts: partnerParts,
-              machTires: 0
-            }
-          }
-          partnerGroups[partnerKey].machTires += p.lot_cnt
-        })
-      }
-    })
-
-    // 用合并方差公式计算该机台总体的综合 CPK (这与树图节点的值完全相同)
-    const machAvgCpk = matchingRows.length > 0 ? aggregateNodeStats(matchingRows).cpk : 0
-
-    // 计算控制变量后的对照基准：对每个搭档组合求一次加权对照基准，再按 M 自己在该组合的产量做二次加权
-    let controlledBaselineNumerator = 0
-    let controlledBaselineDenominator = 0
-
-    Object.values(partnerGroups).forEach(group => {
-      const { mCol, partnerParts, machTires: groupMachTires } = group
-      
-      // 一次加权：寻找拥有相同搭档组合，但该工段不是 mach 的替代路径列表
-      const otherRows = []
-
-      data.forEach(p => {
-        if (p[mCol] !== mach) {
-          const isMatch = cols.every((c, idx) => {
-            if (c === mCol) return true
-            return p[c] === partnerParts[idx]
-          })
-          if (isMatch) {
-            otherRows.push(p)
-          }
-        }
-      })
-
-      // 用合并方差公式计算该替代路径下的联合对照基准 CPK (若缺失则默认回退全局均值)
-      const partnerBaseline = otherRows.length > 0 ? aggregateNodeStats(otherRows).cpk : globalAvgCpk
-
-      // 二次加权累加：以机台 M 在该搭档组合中的实际产量为权重
-      controlledBaselineNumerator += partnerBaseline * groupMachTires
-      controlledBaselineDenominator += groupMachTires
-    })
-
-    const controlledBaseline = controlledBaselineDenominator > 0 
-      ? (controlledBaselineNumerator / controlledBaselineDenominator) 
-      : globalAvgCpk
-
-    const contribution = machAvgCpk - controlledBaseline
-    const volume = totalTires > 0 ? (machTires / totalTires) : 0
-    const impactScore = contribution * volume
-
-    if (machTires >= props.minSamples) {
-      machineList.push({
-        machine: mach,
-        avgCpk: machAvgCpk,
-        controlledBaseline: controlledBaseline,
-        contribution: contribution,
-        volume: volume,
-        impactScore: impactScore
-      })
-    }
-  })
-
-  // 排序与最差机台提取 (胎重下, 影响分越正代表恶化越严重, 偏差绝对值越大代表越差)
-  if (props.indicator === 'weight') {
-    machineList.sort((a, b) => b.impactScore - a.impactScore)
-  } else {
-    machineList.sort((a, b) => a.impactScore - b.impactScore)
-  }
-
-  // Worst Machine: 平均 CPK 最低 (非胎重) 或 绝对偏差最高 (胎重) 的机台
-  let worstMachine = null
-  if (machineList.length > 0) {
-    if (props.indicator === 'weight') {
-      worstMachine = [...machineList].sort((a, b) => b.avgCpk - a.avgCpk)[0]
-    } else {
-      worstMachine = [...machineList].sort((a, b) => a.avgCpk - b.avgCpk)[0]
-    }
-  }
-
-  // Critical Machine: 影响最坏的机台
-  const criticalMachine = machineList[0] || null
+  const criticalMachine = list[0] ? {
+    machine: list[0].machine,
+    impactScore: list[0].impactScore
+  } : null
 
   return {
-    globalAvgCpk,
-    machineList,
-    worstMachine,
+    globalAvgCpk: 0,
+    machineList: list,
+    worstMachine: criticalMachine,
     criticalMachine
   }
 })
@@ -658,10 +635,7 @@ const machineHighlightMap = computed(() => {
   const global = globalAnalysis.value
   if (global && global.machineList && global.machineList.length > 0) {
     const first = global.machineList[0]
-    const isBad = props.indicator === 'weight' ? (first.impactScore > 0) : (first.impactScore < 0)
-    if (isBad) {
-      highlight[first.machine] = { color: '#ef4444', rule: '全局贡献', rank: 1, type: 'global' }
-    }
+    highlight[first.machine] = { color: '#ef4444', rule: '全局贡献', rank: 1, type: 'global' }
   }
 
   return highlight
@@ -722,10 +696,13 @@ async function loadCombinationTree() {
       min_samples: props.minSamples
     }
 
+    fetchTopWarningData()
+
     const res = await api.getMachineCombinationTree(params)
     if (res.data.status === 'success') {
       paths.value = res.data.paths || []
       uslVal.value = res.data.usl || 100.0
+      lslVal.value = res.data.lsl !== undefined ? res.data.lsl : null
     } else {
       error.value = res.data.message || '加载组合数据失败'
     }
@@ -741,7 +718,20 @@ watch(() => props.selectedArticle, loadCombinationTree)
 watch(() => props.startDate, loadCombinationTree)
 watch(() => props.endDate, loadCombinationTree)
 watch(() => props.targetDate, loadCombinationTree)
-watch(() => props.indicator, loadCombinationTree)
+watch(() => props.indicator, (newVal) => {
+  if (newVal !== 'weight') {
+    if (level4.value === 'tb_first_workcenter') level4.value = null
+    if (level3.value === 'tb_first_workcenter') level3.value = null
+    if (level2.value === 'tb_first_workcenter') level2.value = null
+    if (level1.value === 'tb_first_workcenter') level1.value = 'gt_workcenter'
+    normalizeHierarchy()
+  } else {
+    if (!level4.value && level1.value && level2.value && level3.value) {
+      level4.value = 'tb_first_workcenter'
+    }
+  }
+  loadCombinationTree()
+})
 watch(() => props.minSamples, loadCombinationTree)
 
 // 监听容器大小，用于动态 Aspect Ratio 计算
@@ -779,13 +769,11 @@ const sortedTableData = computed(() => {
     // Calculate CPK/deviation for the leaf combination directly
     const std = p.std_val
     const avg = p.avg_val
-    const usl = uslVal.value
     let cpk = 1.33
     if (props.indicator === 'weight') {
       cpk = avg
     } else {
-      cpk = std > 0.0 ? (usl - avg) / (3.0 * std) : 1.33
-      cpk = Math.max(0.0, Math.min(5.0, cpk))
+      cpk = (p.cpk !== undefined && p.cpk !== null) ? p.cpk : calcCpk(avg, std, uslVal.value, lslVal.value)
     }
 
     const item = {
@@ -823,16 +811,16 @@ const MAX_Y_GAP = 100
 const treeYGap = computed(() => {
   const dataList = sortedTableData.value || []
   const visibleCount = dataList.filter(p => p.lot_cnt >= props.minSamples).length || 1
-  // 可视区域高度预设 600px，尝试大致地匹配容器
+  // 可视区域高度预设 500px
   const targetH = Math.max(500, wrapperWidth.value * 0.5)
   const raw = targetH / visibleCount
-  return Math.max(MIN_Y_GAP, Math.min(MAX_Y_GAP, raw)) * zoomScale.value
+  return Math.max(MIN_Y_GAP, Math.min(MAX_Y_GAP, raw))
 })
 
 const treeChartHeight = computed(() => {
   const dataList = sortedTableData.value || []
   const visibleCount = dataList.filter(p => p.lot_cnt >= props.minSamples).length || 1
-  return Math.max(500 * zoomScale.value, visibleCount * treeYGap.value + 80 * zoomScale.value)
+  return Math.max(500, visibleCount * treeYGap.value + 80)
 })
 
 // sortedTableData watcher removed
@@ -865,15 +853,7 @@ function aggregateNodeStats(rows) {
 
   const combinedStd = Math.sqrt(combinedVar)
   
-  // CPK / 绝对偏差率 Calculation
-  let cpk = 1.33
-  if (props.indicator === 'weight') {
-    cpk = combinedMean
-  } else {
-    const usl = uslVal.value
-    cpk = combinedStd > 0.0 ? (usl - combinedMean) / (3.0 * combinedStd) : 1.33
-    cpk = Math.max(0.0, Math.min(5.0, cpk))
-  }
+  const cpk = calcCombinedCpk(rows, uslVal.value, lslVal.value, props.indicator)
 
   return {
     lot_cnt: totalN,
@@ -965,7 +945,7 @@ const chartOption = computed(() => {
   const leaves = Object.values(treeNodes).filter(n => visibleNodeIds.has(n.id) && n.children.length === 0)
   leaves.sort((a, b) => a.id.localeCompare(b.id))
 
-  const containerW = (wrapperWidth.value || 1200) * zoomScale.value
+  const containerW = wrapperWidth.value || 1200
   const containerH = treeChartHeight.value || 500
   
   // 动态考虑 ECharts 边距配置的有效比例
@@ -1069,20 +1049,22 @@ const chartOption = computed(() => {
         formatter: (params) => {
           if (n.id === 'root') return `{root|规格: ${params.name}}`
           const cpkStr = avgCpk.toFixed(2)
+          const avgValStr = n.avg_val !== undefined && n.avg_val !== null ? n.avg_val.toFixed(2) : '0.00'
+          const stdValStr = n.std_val !== undefined && n.std_val !== null ? n.std_val.toFixed(2) : '0.00'
+          
           if (props.indicator === 'weight') {
             if (n.children.length === 0) {
-              return `{mach|${params.name}} {info|(偏离: ${cpkStr}%)}`
+              return `{mach|${params.name}} {info|(偏离: ${cpkStr}%, μ: ${avgValStr}, σ: ${stdValStr})}`
             }
-            return `{mach|${params.name}}\n{info|(偏离: ${cpkStr}%)}`
+            return `{mach|${params.name}}\n{info|(偏离: ${cpkStr}%, μ: ${avgValStr}, σ: ${stdValStr})}`
           }
-          const avgValStr = n.avg_val !== undefined && n.avg_val !== null ? n.avg_val.toFixed(2) : '0.00'
-          
+
           if (n.children.length === 0) {
             // 叶子节点：单行排布
-            return `{mach|${params.name}} {info|(μ: ${avgValStr}, CPK: ${cpkStr})}`
+            return `{mach|${params.name}} {info|(CPK: ${cpkStr}, μ: ${avgValStr}, σ: ${stdValStr})}`
           }
           // 中间节点：折行排布
-          return `{mach|${params.name}}\n{info|(μ: ${avgValStr}, CPK: ${cpkStr})}`
+          return `{mach|${params.name}}\n{info|(CPK: ${cpkStr}, μ: ${avgValStr}, σ: ${stdValStr})}`
         },
         rich: {
           root: {
@@ -1213,8 +1195,8 @@ const chartOption = computed(() => {
       {
         type: 'graph',
         layout: 'none',
-        left: (isAllControlsHidden.value ? 120 : 250) * zoomScale.value,
-        right: 200 * zoomScale.value,
+        left: isAllControlsHidden.value ? 120 : 250,
+        right: 200,
         top: isAllControlsHidden.value ? '8%' : '12%',
         bottom: isAllControlsHidden.value ? '8%' : '12%',
         data: nodes,

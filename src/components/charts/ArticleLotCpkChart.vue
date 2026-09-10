@@ -9,15 +9,25 @@
           <el-radio-button value="raw">实际值分布</el-radio-button>
         </el-radio-group>
         <span v-else style="font-size: 13px; font-weight: bold; color: #475569; display: flex; align-items: center; gap: 4px;">
-          📦 胎重实际测量值分布 (单位: kg)
+          胎重实际测量值分布 (单位: kg)
         </span>
       </div>
 
       <!-- 右侧: 时间维度选择器与日期范围选择器 -->
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 12px; color: #64748b; font-weight: 500;">⏱️ 排序维度:</span>
-          <el-select v-model="selectedTimeCol" size="small" style="width: 165px;" @change="handleTimeColChange">
+        <div class="nav-control-group stripe-pill">
+          <div class="nav-label-badge">
+            <el-icon class="nav-badge-icon"><Clock /></el-icon>
+            <span class="nav-control-label">排序维度</span>
+          </div>
+          <el-select
+            v-model="selectedTimeCol"
+            size="small"
+            class="header-nav-select time-sort-select"
+            popper-class="header-select-popper"
+            style="width: 165px;"
+            @change="handleTimeColChange"
+          >
             <el-option label="成型 GT 时间 (默认)" value="gt_loc_timestamp" />
             <el-option label="硫化 CT 时间" value="ct_loc_timestamp" />
             <el-option label="胎面时间" value="tread_loc_timestamp" />
@@ -33,8 +43,11 @@
           </el-select>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 12px; color: #64748b; font-weight: 500;">📅 追溯日期:</span>
+        <div class="nav-control-group stripe-pill">
+          <div class="nav-label-badge">
+            <el-icon class="nav-badge-icon"><Calendar /></el-icon>
+            <span class="nav-control-label">追溯日期</span>
+          </div>
           <el-date-picker
             v-model="localDateRange"
             type="daterange"
@@ -44,7 +57,8 @@
             end-placeholder="结束日期"
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
-            style="width: 220px;"
+            class="header-nav-datepicker"
+            style="width: 215px;"
             @change="handleDateRangeChange"
           />
         </div>
@@ -53,7 +67,7 @@
 
     <!-- 工段快速定位导航按钮组 (各工段独立单独展示) -->
     <div class="workcenter-nav-bar" style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-      <span style="font-size: 12px; font-weight: 600; color: #475569; margin-right: 2px;">⚡ 选择工段:</span>
+      <span style="font-size: 12px; font-weight: 600; color: #475569; margin-right: 2px;">选择工段:</span>
       <button
         v-for="comp in allWorkcenters"
         :key="comp"
@@ -68,15 +82,18 @@
     <!-- 图例与提示说明栏 -->
     <div class="lot-notice-bar" style="margin-bottom: 10px; font-size: 12px; background: #f8fafc; padding: 8px 14px; border-radius: 6px; border: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
       <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-        <span>📦 【{{ activeComponent || '工段' }}】有效批次: <strong>{{ currentCompLotCount }}</strong> 个</span>
+        <span>【{{ activeComponent || '工段' }}】有效批次: <strong>{{ currentCompLotCount }}</strong> 个</span>
         <template v-if="displayMode === 'cpk'">
           <span style="color: #334155; font-weight: 600;">● ── 单规格 CPK (点击数据点看 Barcode 明细)</span>
           <span style="color: #64748b; font-weight: 600;">◆ ┈┈ 其它规格加权 CPK (已排除当前单规格)</span>
         </template>
         <template v-else>
-          <span style="color: #334155; font-weight: 600;">📦 实际测量值分布 (点击箱形图看 Barcode 明细)</span>
-          <span style="color: #dc2626; font-weight: 600;">── 规格上限 (USL: {{ uslValue }})</span>
-          <span style="color: #475569; font-weight: 500;">📉 按选定时间维度先后次序排列</span>
+          <div v-if="props.indicator !== 'weight'" style="font-size: 11px; display: flex; align-items: center; gap: 8px;">
+            <span style="color: #dc2626; font-weight: 600;">── 规格上限 (USL: {{ uslValue }})</span>
+            <span v-if="props.lslValue !== null && props.lslValue !== undefined" style="color: #dc2626; font-weight: 600;">── 规格下限 (LSL: {{ props.lslValue }})</span>
+            <span style="color: #ef4444; font-weight: 600;">── 基准线 (CPK Target: 1.33)</span>
+          </div>
+          <span v-else style="color: #475569; font-weight: 500;">按选定时间维度先后次序排列</span>
         </template>
       </div>
       
@@ -147,20 +164,20 @@
       <!-- 弹窗顶栏控制与元数据说明 -->
       <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: #f8fafc; padding: 10px 14px; border-radius: 6px; border: 1px solid #e2e8f0;">
         <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; font-size: 12px; color: #334155;">
-          <span>📦 规格: <strong>{{ selectedArticle || '未指定' }}</strong></span>
-          <span>⚙️ 工段: <strong>{{ dialogLotInfo?.component || activeComponent }}</strong></span>
-          <span>🏭 加工机台: <strong :style="{ color: getMachineColor(dialogLotInfo?.machine) }">● {{ dialogLotInfo?.machine }}</strong></span>
-          <span>🏷️ 物料批次 Lot: <strong style="color: #2563eb;">{{ dialogLotInfo?.lot }}</strong></span>
-          <span>📊 下属 Barcode 样本量: <strong>{{ dialogBarcodeList.length }}</strong> 条</span>
+          <span>规格: <strong>{{ selectedArticle || '未指定' }}</strong></span>
+          <span>工段: <strong>{{ dialogLotInfo?.component || activeComponent }}</strong></span>
+          <span>加工机台: <strong :style="{ color: getMachineColor(dialogLotInfo?.machine) }">● {{ dialogLotInfo?.machine }}</strong></span>
+          <span>物料批次 Lot: <strong style="color: #2563eb;">{{ dialogLotInfo?.lot }}</strong></span>
+          <span>下属 Barcode 样本量: <strong>{{ dialogBarcodeList.length }}</strong> 条</span>
         </div>
 
         <!-- 机台分组连线切换 Radio -->
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 12px; font-weight: 600; color: #475569;">🔀 机台分组连线:</span>
+          <span style="font-size: 12px; font-weight: 600; color: #475569;">机台分组连线:</span>
           <el-radio-group v-model="barcodeGroupMode" size="small">
-            <el-radio-button value="none">🌐 不分组 (全局顺序)</el-radio-button>
-            <el-radio-button value="ct">🏭 按 CT 硫化机台分组</el-radio-button>
-            <el-radio-button value="tu">🔍 按 TU 检测机台分组</el-radio-button>
+            <el-radio-button value="none">不分组 (全局顺序)</el-radio-button>
+            <el-radio-button value="ct">按 CT 硫化机台分组</el-radio-button>
+            <el-radio-button value="tu">按 TU 检测机台分组</el-radio-button>
           </el-radio-group>
         </div>
       </div>
@@ -193,7 +210,7 @@ import { use } from 'echarts/core'
 import { LineChart, BoxplotChart } from 'echarts/charts'
 import { TooltipComponent, GridComponent, LegendComponent, MarkLineComponent, MarkAreaComponent, DataZoomComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, Clock, Calendar } from '@element-plus/icons-vue'
 import { api } from '@/api'
 
 use([LineChart, BoxplotChart, TooltipComponent, GridComponent, LegendComponent, MarkLineComponent, MarkAreaComponent, DataZoomComponent, CanvasRenderer])
@@ -201,6 +218,7 @@ use([LineChart, BoxplotChart, TooltipComponent, GridComponent, LegendComponent, 
 const props = defineProps({
   lotData:         { type: Array, default: () => [] },
   uslValue:        { type: Number, default: 100 },
+  lslValue:        { type: Number, default: null },
   loading:         { type: Boolean, default: false },
   error:           { type: String, default: null },
   selectedArticle: { type: String, default: '' },
@@ -467,7 +485,7 @@ const barcodeChartOption = computed(() => {
     } else {
       const minV = Math.min(...yValues)
       const maxV = Math.max(...yValues, targetUSL)
-      yMin = Math.max(0, Math.floor((minV - 2.0) / 5) * 5)
+      yMin = Math.floor((minV - 2.0) / 5) * 5
       yMax = Math.ceil((maxV + 5.0) / 5) * 5
     }
     const zoomEnd = Math.min(100, Math.max(20, Math.round((28 / Math.max(1, yValues.length)) * 100)))
@@ -827,7 +845,7 @@ const option = computed(() => {
         const targetUSL = props.uslValue || 100
         const minVal = Math.min(...validRawVals)
         const maxVal = Math.max(...validRawVals, targetUSL)
-        yMin = Math.max(0, Math.floor((minVal - 2.0) / 5) * 5)
+        yMin = Math.floor((minVal - 2.0) / 5) * 5
         yMax = Math.ceil((maxVal + 5.0) / 5) * 5
       }
     } else {
@@ -853,20 +871,30 @@ const option = computed(() => {
 
   if (isBoxplotMode) {
     // ── 箱线图实际值模式 ──────────────────────────────────────────
+    const mlEntries = [
+      {
+        yAxis: props.uslValue || 100,
+        name: '规格上限 USL',
+        lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
+        label: { formatter: `USL 上限 (${props.uslValue || 100})`, position: 'end', color: '#ef4444', fontSize: 10 }
+      }
+    ]
+    if (props.lslValue !== null && props.lslValue !== undefined) {
+      mlEntries.push({
+        yAxis: props.lslValue,
+        name: '规格下限 LSL',
+        lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
+        label: { formatter: `LSL 下限 (${props.lslValue})`, position: 'end', color: '#ef4444', fontSize: 10 }
+      })
+    }
+
     seriesList.push({
       name: '规格上限 USL',
       type: 'line',
       data: [],
       markLine: {
         symbol: 'none',
-        data: [
-          {
-            yAxis: props.uslValue || 100,
-            name: '规格上限 USL',
-            lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 },
-            label: { formatter: `USL 上限 (${props.uslValue || 100})`, position: 'end', color: '#ef4444', fontSize: 10 }
-          }
-        ]
+        data: mlEntries
       }
     })
 
@@ -887,9 +915,9 @@ const option = computed(() => {
         value: d.boxplot, // [min_v, q1_v, mean_v, q3_v, max_v]
         lotInfo: d,
         itemStyle: {
-          color: isDimmed ? 'rgba(241, 245, 249, 0.03)' : hexToRgba(mColor, 0.25),
+          color: isDimmed ? 'rgba(241, 245, 249, 0.03)' : hexToRgba(mColor, 0.45),
           borderColor: isDimmed ? 'rgba(203, 213, 225, 0.2)' : mColor,
-          borderWidth: isDimmed ? 0.5 : 1.5
+          borderWidth: isDimmed ? 0.5 : 2.0
         }
       }
     })
@@ -897,7 +925,8 @@ const option = computed(() => {
     seriesList.push({
       name: '实际测量值箱线图',
       type: 'boxplot',
-      boxWidth: [6, 26],
+      boxWidth: [8, 30],
+      z: 3,
       data: boxData,
       markArea: {
         silent: true,
@@ -918,7 +947,7 @@ const option = computed(() => {
             lotInfo: d
           }
         }
-        return null
+          return null
       })
 
       seriesList.push({
@@ -927,9 +956,10 @@ const option = computed(() => {
         smooth: 0.2,
         connectNulls: false,
         symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: { color: mColor, width: 2.0 },
-        itemStyle: { color: mColor, borderColor: mColor },
+        symbolSize: 5,
+        z: 4,
+        lineStyle: { color: mColor, width: 1.8 },
+        itemStyle: { color: mColor, borderColor: '#ffffff', borderWidth: 1 },
         data: meanData
       })
     })
@@ -1096,7 +1126,7 @@ const option = computed(() => {
               <strong style="color:#059669">${bp[0]}</strong>
             </div>
             <div style="margin-top:6px; font-size:10px; color:#94a3b8; text-align:right; border-top:1px dashed #e2e8f0; padding-top:4px;">
-              💡 点击图形查看 Barcode 级明细
+              点击图形查看 Barcode 级明细
             </div>
           `
         } else {
@@ -1121,7 +1151,7 @@ const option = computed(() => {
               <strong style="color:${lotInfo.multi_cpk < 1.33 ? '#dc2626' : '#d97706'}">${lotInfo.multi_cpk} (N=${lotInfo.multi_n})</strong>
             </div>
             <div style="margin-top:6px; font-size:10px; color:#94a3b8; text-align:right; border-top:1px dashed #e2e8f0; padding-top:4px;">
-              💡 点击图形查看 Barcode 级明细
+              点击图形查看 Barcode 级明细
             </div>
           `
         }

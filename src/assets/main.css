@@ -17,10 +17,11 @@
   --c-text-secondary: #4b5563;
   --c-text-muted:     #9ca3af;
 
-  /* 品牌色 */
-  --c-accent:        #6366f1;
-  --c-accent-light:  #e0e7ff;
-  --c-accent-hover:  #4f46e5;
+  /* 品牌色 - 现代暖金/琥珀黄主题 */
+  --c-accent:        #f59e0b;
+  --c-accent-light:  #fef3c7;
+  --c-accent-hover:  #d97706;
+  --c-accent-dark:   #b45309;
 
   /* 状态色 */
   --c-danger:        #ef4444;
@@ -31,13 +32,13 @@
   --c-success-light: #ecfdf5;
 
   /* 图表色板 */
-  --chart-1: #6366f1;
+  --chart-1: #f59e0b;
   --chart-2: #8b5cf6;
   --chart-3: #ec4899;
   --chart-4: #f97316;
   --chart-5: #10b981;
   --chart-anomaly: #ef4444;
-  --chart-normal:  #a5b4fc;
+  --chart-normal:  #fcd34d;
   --chart-rate:    #f59e0b;
 
   /* 布局 */
@@ -51,7 +52,7 @@
   --shadow-sm: 0 4px 6px -1px rgba(156, 163, 175, 0.3);
   --shadow-md: 0 10px 15px -3px rgba(156, 163, 175, 0.4);
   --shadow-lg: 0 20px 25px -5px rgba(156, 163, 175, 0.4);
-  --shadow-hover: 0 20px 25px -5px rgba(99, 102, 241, 0.2);
+  --shadow-hover: 0 12px 20px -3px rgba(245, 158, 11, 0.25);
 
   /* 动画 */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -76,52 +77,158 @@ body {
   font-weight: 600 !important;
 }
 
-/* ── Element Plus 主题覆盖 ────────────────────────────────── */
+/* ── 全局统一 Stripe Pill 胶囊控件系统 (标准黄调风格) ── */
+.nav-control-group {
+  display: inline-flex;
+  align-items: center;
+  height: 34px !important;
+  box-sizing: border-box !important;
+  background: #ffffff;
+  border: 1px solid #fde68a;
+  border-radius: 20px;
+  padding: 3px 6px 3px 3px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.08);
+}
+
+.nav-control-group:hover {
+  background: #ffffff;
+  border-color: #f59e0b;
+  box-shadow: 0 4px 12px -2px rgba(245, 158, 11, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  transform: translateY(-1px);
+}
+
+.nav-control-group:focus-within {
+  background: #ffffff;
+  border-color: #d97706;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2), 0 4px 12px rgba(245, 158, 11, 0.12);
+}
+
+.nav-label-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px !important;
+  box-sizing: border-box !important;
+  background: #fef3c7;
+  color: #b45309;
+  padding: 0 8px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.nav-badge-icon {
+  font-size: 13px;
+  color: #d97706;
+}
+
+.nav-control-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #b45309;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* 嵌入式 Select & DatePicker 去除默认冗余边框与内边距 */
+.header-nav-select .el-select__wrapper,
+.header-nav-datepicker,
+.header-nav-datepicker .el-input__wrapper {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 4px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  line-height: 26px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+  font-size: 12.5px !important;
+}
+
+.header-nav-select .el-select__wrapper.is-focused {
+  box-shadow: none !important;
+}
+
+/* ── Element Plus 主题覆盖 (黄色主题) ────────────────────────────────── */
 .el-select .el-input__wrapper,
 .el-input__wrapper {
-  background: #f9fafb !important;
-  border: none !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: none !important;
-  padding: 8px 16px !important;
+  background: #ffffff !important;
+  border: 1px solid #fde68a !important;
+  border-radius: 16px !important;
+  box-shadow: 0 1px 2px rgba(245, 158, 11, 0.05) !important;
+  padding: 4px 12px !important;
   transition: all var(--dur-normal) var(--ease) !important;
+}
+.el-select .el-input__wrapper:hover,
+.el-input__wrapper:hover {
+  border-color: #f59e0b !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.18) !important;
 }
 .el-select .el-input__wrapper.is-focus,
 .el-input__wrapper.is-focus {
   background: #ffffff !important;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5) !important;
+  border-color: #d97706 !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
 }
 .el-button--primary {
-  background: #6366f1 !important;
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
   border: none !important;
   border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-md) !important;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3) !important;
   color: #ffffff !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   transition: all var(--dur-normal) var(--ease) !important;
 }
 .el-button--primary:hover {
-  background: #4f46e5 !important;
-  box-shadow: var(--shadow-hover) !important;
+  background: linear-gradient(135deg, #d97706, #b45309) !important;
+  box-shadow: 0 6px 16px rgba(217, 119, 6, 0.4) !important;
   transform: translateY(-2px) !important;
 }
 .el-button--primary:active {
   transform: scale(0.95) !important;
 }
 .el-button--primary.is-plain {
-  background: #f8fafc !important;
-  border: none !important;
+  background: #fffbeb !important;
+  border: 1px solid #fde68a !important;
   box-shadow: var(--shadow-sm) !important;
-  color: #4b5563 !important;
+  color: #b45309 !important;
 }
 .el-button--primary.is-plain:hover {
-  background: #ffffff !important;
+  background: #fef3c7 !important;
+  border-color: #f59e0b !important;
   box-shadow: var(--shadow-md) !important;
   transform: translateY(-2px) !important;
-  color: #1f2937 !important;
+  color: #92400e !important;
 }
 .el-button--primary.is-plain:active {
   transform: scale(0.95) !important;
+}
+
+.el-radio-button__inner {
+  font-size: 12px !important;
+  border: none !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  padding: 6px 14px !important;
+  transition: all var(--dur-normal) var(--ease) !important;
+}
+.el-radio-button__orig-radio:checked + .el-radio-button__inner,
+.el-radio-button.is-active .el-radio-button__inner {
+  background-color: #f59e0b !important;
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  color: #ffffff !important;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35) !important;
+  font-weight: 700 !important;
+}
+.el-radio-button__inner:hover {
+  color: #b45309 !important;
+  background-color: #fef3c7 !important;
 }
 .el-date-picker .el-input__wrapper {
   border-radius: var(--radius-sm) !important;
@@ -300,7 +407,11 @@ body {
 .text-muted { color: var(--c-text-muted); font-size: 12px; }
 .text-danger { color: var(--c-danger); }
 .text-success { color: var(--c-success); }
-.font-mono { font-family: 'JetBrains Mono', monospace; }
+.font-mono { 
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── 下钻面包屑 ─────────────────────────────────────────── */
