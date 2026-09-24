@@ -8,7 +8,7 @@ import pyarrow.parquet as pq
 DEFAULT_RETENTION_DAYS = 31
 
 # PyArrow 流式读取批次大小（行数）——控制单批内存峰值
-BATCH_SIZE = 50000
+BATCH_SIZE = 100000
 
 
 def get_data_dir():
@@ -105,6 +105,24 @@ def _filter_base_batch(batch: pa.RecordBatch, inc_barcodes: set, cutoff_date: st
     return table
 
 
+def _align_table_schema(table: pa.Table, target_schema: pa.Schema) -> pa.Table:
+    """确保 table 符合 target_schema，缺失字段补 null，额外字段丢弃，类型自动强转"""
+    import pyarrow.compute as pc
+    new_columns = []
+    for field in target_schema:
+        if field.name in table.schema.names:
+            col = table.column(field.name)
+            if col.type != field.type:
+                try:
+                    col = pc.cast(col, field.type)
+                except Exception:
+                    pass
+            new_columns.append(col)
+        else:
+            new_columns.append(pa.nulls(len(table), type=field.type))
+    return pa.Table.from_arrays(new_columns, schema=target_schema)
+
+
 def merge_main(
     base_parquet: str = None,
     incremental_parquet: str = None,
@@ -154,10 +172,32 @@ def merge_main(
             base_row_groups = pf.metadata.num_row_groups
             print(f"  本地已有数据: {pf.metadata.num_rows:,} 行，{base_row_groups} 个 Row Group")
         except Exception as e:
-            print(f"[Merge Warning] 读取本地 Parquet 元数据失败，将以增量数据作为全量基础: {e}")
-            base_exists = False
+            print(f"[Merge Warning] 读取 {os.path.basename(base_parquet)} 失败: {e}")
+            # 尝试回退至 cleaned 表作为 base，防止丢失历史数据
+            cleaned_alt = os.path.join(os.path.dirname(base_parquet), "yield_flat_table_joined_100_cleaned.parquet")
+            if os.path.exists(cleaned_alt):
+                try:
+                    pf = pq.ParquetFile(cleaned_alt)
+                    base_row_groups = pf.metadata.num_row_groups
+                    base_exists = True
+                    print(f"  [Fallback Base] 成功回退至备用清洗表作为合并基础: {pf.metadata.num_rows:,} 行")
+                except Exception:
+                    base_exists = False
+            else:
+                base_exists = False
     else:
-        print("  本地 Parquet 不存在，将以增量数据作为全量基础。")
+        # 尝试检查 cleaned 表作为 base
+        cleaned_alt = os.path.join(os.path.dirname(base_parquet), "yield_flat_table_joined_100_cleaned.parquet")
+        if os.path.exists(cleaned_alt):
+            try:
+                pf = pq.ParquetFile(cleaned_alt)
+                base_row_groups = pf.metadata.num_row_groups
+                base_exists = True
+                print(f"  [Fallback Base] 成功使用备用清洗表作为合并基础: {pf.metadata.num_rows:,} 行")
+            except Exception:
+                base_exists = False
+        else:
+            print("  本地 Parquet 不存在，将以增量数据作为全量基础。")
 
     print(f"  滚动窗口: 保留最近 {retention_days} 天（截止 {cutoff_date}）")
 
@@ -179,14 +219,29 @@ def merge_main(
     try:
         print(f"\n--- 合并阶段: PyArrow 流式写回主 Parquet ---")
 
+        # 统合增量与 base 的 schema，防止字段扩增导致 schema 不一致崩溃
+        if base_exists and len(inc_table) > 0:
+            try:
+                target_schema = pa.unify_schemas([inc_table.schema, pf.schema])
+            except Exception:
+                target_schema = inc_table.schema
+        elif len(inc_table) > 0:
+            target_schema = inc_table.schema
+        elif base_exists:
+            target_schema = pf.schema
+        else:
+            target_schema = None
+
+        if target_schema:
+            writer = pq.ParquetWriter(tmp_out, target_schema, compression="snappy")
+
         # Step 4a：先写入增量数据（新版本优先）
         if len(inc_table) > 0:
-            schema = inc_table.schema
-            writer = pq.ParquetWriter(tmp_out, schema, compression="snappy")
-            writer.write_table(inc_table)
+            aligned_inc = _align_table_schema(inc_table, target_schema)
+            writer.write_table(aligned_inc)
             total_written += len(inc_table)
             print(f"  已写入增量数据: {len(inc_table):,} 行")
-            del inc_table  # 及时释放
+            del inc_table, aligned_inc  # 及时释放
 
         # Step 4b：流式处理 base 数据，每批 BATCH_SIZE 行
         if base_exists:
@@ -197,11 +252,8 @@ def merge_main(
                     batch_idx += 1
                     continue
 
-                # 如果 writer 还未初始化（纯 base 模式）
-                if writer is None:
-                    writer = pq.ParquetWriter(tmp_out, filtered.schema, compression="snappy")
-
-                writer.write_table(filtered)
+                aligned_filtered = _align_table_schema(filtered, target_schema)
+                writer.write_table(aligned_filtered)
                 total_written += len(filtered)
                 batch_idx += 1
                 if batch_idx % 10 == 0:

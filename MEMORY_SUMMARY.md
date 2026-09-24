@@ -28,7 +28,48 @@
 
 ---
 
-## 3. 重磅更新记录 (2026-08-27)
+## 3. 全厂 17 项工序质量指标与标准 CPK 架构升级 (2026-09-16)
+
+### 1. 业务目标与对齐决策
+- **顶栏导航下拉分组**：
+  - 纯净三大分组：`TU` (7项)、`TG` (7项)、`TB` (3项)；
+  - 彻底去除图标 emoji、数字统计标注、以及“物理指标/胎重”分组；
+  - 标签纯净呈现：
+    - `TU`: RFPP, RFH1, RFH2, LFPP, LFH1, CONY, PLYS
+    - `TG`: TBUL, BBUL, TDEP, BDEP, TLRO, BLRO, CRRO
+    - `TB`: TBALW, BBALW, SBALW
+- **数据量纲与单位核实**：
+  - TU: 峰谐波原始标称值需乘以 10 转换为牛 (N)；CONY / PLYS 原始存牛 (N)；
+  - TG: 原始值与配方限 `_usl` 均为毫米 (mm，如 0.22mm / 0.8mm)，**量纲一致，不需要乘以 1000**；
+  - TB: 动平衡原始值与配方限 `_usl` 均为克 (g，如 12.18g / 50.0g)，**量纲一致，不需要乘以 1000**。
+- **公差限 100% 严格遵循配方表**：
+  - 废除任何人造硬编码假数据兜底（不设默认值）；
+  - 规格若在配方表未配置该指标公差限 (NULL)，表示该规格不考核该项，直接不参与该指标 CPK 统计。
+- **机台分析模块保持原样**：GT、CT、TU 原有架构完整保留并全面支持 17 项指标列动态计算。
+
+### 2. 后端核心层与服务改造
+- `backend/core/cpk.py`：
+  - 建立统一 `INDICATORS_SPEC` 字典映射，支持单侧上限与双侧公差计算：
+    - 单侧上限：$CPK = (USL - \mu) / (3\sigma)$
+    - 双侧公差 (CONY, PLYS)：$CPK = \min((USL - \mu)/(3\sigma), (\mu - LSL)/(3\sigma))$
+- `backend/services/trend_service.py`：
+  - `get_trend_cpk` 动态接收 `indicator` 参数，实现日度全厂加权 CPK、SPC 均值与方差、异常值统计。
+- `backend/services/article_service.py`：
+  - `get_warning_cpk`、`get_barcode_measurements`、`get_lot_cpk_trend`、`get_lot_barcode_detail` 全面支持 17 项指标动态列与配方公差。
+- `backend/services/machine_service.py`：
+  - `get_top_warning_machines`、`get_machine_cpk`、`get_best_tu_machine_for_spec` 全面支持 17 项指标。
+
+### 3. 前端界面联动与体验升级
+- `src/App.vue`：
+  - 顶部导航栏指标选择器重构为 `<el-option-group>` 纯净三组（TU, TG, TB），删除胎重公差输入框；
+- `src/views/Dashboard.vue`：
+  - 修复 `loadCpkTrend` 携带 `params.indicator = cpkIndicator.value`，保证切换指标全局联动趋势图、核心规格表、工序流转；
+- `src/components/charts/TrendChart.vue`：
+  - 动态识别系列名称 `${indicator.toUpperCase()} 综合 CPK`，动态计算 1σ, 2σ, 3σ SPC 控制限及对应物理单位。
+
+---
+
+## 4. 重磅更新记录 (2026-08-27)
 
 ### 1. 产量平方根平滑机台贡献度算法 (Square-Root Volume Smoothing)
 - **解决核心痛点**：
@@ -375,10 +416,355 @@
   - 为 `.driver-popover` 设置 `z-index: 2147483647 !important` 与纯白背景 `background-color: #ffffff !important`；
 - **实测验证**：高亮镂空区域 100% 通透纯白无阴影，卡片阴影质感极佳，5 步流体形变转场与销毁退出均顺利通过浏览器自动化及人工截屏验证。
 
-### 3. 核心变更文件清单
-- **样式定制**：[src/assets/tour.css](file:///d:/Ava/untitled1/untitled1_v2/src/assets/tour.css)
-- **漫游逻辑 Composable**：[src/composables/useDashboardTour.js](file:///d:/Ava/untitled1/untitled1_v2/src/composables/useDashboardTour.js)
-- **界面集成**：[src/App.vue](file:///d:/Ava/untitled1/untitled1_v2/src/App.vue)、[src/views/Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue)
-- **依赖项**：[package.json](file:///d:/Ava/untitled1/untitled1_v2/package.json)（添加 `driver.js: ^1.8.0`）
-- **独立后端服务文件**：[backend/tutorial_standalone.py](file:///d:/Ava/untitled1/untitled1_v2/backend/tutorial_standalone.py)
-- **计划与验收文档**：[implementation_plan.md](file:///C:/Users/uif77331/.gemini/antigravity-ide/brain/1cf48e1e-a453-4015-921e-c5b8845a34ac/implementation_plan.md)、[walkthrough.md](file:///C:/Users/uif77331/.gemini/antigravity-ide/brain/1cf48e1e-a453-4015-921e-c5b8845a34ac/walkthrough.md)
+- **核心变更文件清单**：
+  - 样式定制：[src/assets/tour.css](file:///d:/Ava/untitled1/untitled1_v2/src/assets/tour.css)
+  - 漫游逻辑 Composable：[src/composables/useDashboardTour.js](file:///d:/Ava/untitled1/untitled1_v2/src/composables/useDashboardTour.js)
+  - 界面集成：[src/App.vue](file:///d:/Ava/untitled1/untitled1_v2/src/App.vue)、[src/views/Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue)
+  - 依赖项：[package.json](file:///d:/Ava/untitled1/untitled1_v2/package.json)（添加 `driver.js: ^1.8.0`）
+  - 独立后端服务文件：[backend/tutorial_standalone.py](file:///d:/Ava/untitled1/untitled1_v2/backend/tutorial_standalone.py)
+  - 计划与验收文档：[implementation_plan.md](file:///C:/Users/uif77331/.gemini/antigravity-ide/brain/1cf48e1e-a453-4015-921e-c5b8845a34ac/implementation_plan.md)、[walkthrough.md](file:///C:/Users/uif77331/.gemini/antigravity-ide/brain/1cf48e1e-a453-4015-921e-c5b8845a34ac/walkthrough.md)
+
+### 4. Git 版本归档与 GitHub 远程备份 (2026-09-10)
+- **目标仓库**：`https://github.com/mayuxiang666-eng/TireWeight_Uniformity_Analysis.git` (账号 `mayuxiang666-eng`)
+- **分支**：`feature/kanban-onboarding-tour`
+- **版本标签 (Git Tag)**：`9.10-加cgrs状态参数前`
+- **提交哈希 (Commit)**：`6e8cfce4162a2ba57b918c03f4d7fdedfbf63928`
+- **状态**：`working tree clean`（全量代码与记忆文档已推送归档，为下一功能开发提供完整回滚与基线保障）。
+
+---
+
+## 13. 重磅更新记录 (2026-09-16) - ETL 架构彻底单表化重构与 17 项 Grade 原生提取及 TU/TG/TB 异常物化
+
+### 1. 业务背景与改造痛点
+- **旧架构缺陷**：历史取数逻辑中，为计算基准标准值在 Redshift 端创建临时表 `tmp_dil_article_standard` 并执行 3 表关联（`yield_flat_table LEFT JOIN article LEFT JOIN tmp_dil_article_standard`），导致提取耗时较长并存在组件行膨胀隐患；且 Recipe 匹配受 `生产时间 >= UPDATE_LIMIT` 限制，大量数据只能使用粗粒度基准兜底。
+- **用户核心需求**：
+  1. 彻底单表拉取 `he_datamarts.yield_flat_table`，废弃所有跨表 Join；
+  2. 上下限控制限 100% 优先匹配 `Recipes.csv`（解除时间限制，过滤工业免检占位符）；
+  3. TG 测量值统一换算为毫米（mm）；
+  4. 生产表纳入原生 17 项 Grade 评级字段，物化单胎与工序（TU/TG/TB）异常判定及来源标签。
+
+### 2. 核心架构与落地细节
+1. **Redshift 单表极速提取 ([backend/etl/fetch_data.py](file:///d:/Ava/untitled1/untitled1_v2/backend/etl/fetch_data.py))**：
+   - 彻底删除临时表与 `LEFT JOIN`，直接单表查询 `FROM he_datamarts.yield_flat_table y`；
+   - 提取字段中新纳入 17 个原生 Grade 字段：
+     - TU (7项): `grade_rfppwc_first`, `grade_rfh1wc_first`, `grade_rfh2wc_first`, `grade_lfppwc_first`, `grade_lfh1wc_first`, `grade_cony_first`, `grade_plys_first`
+     - TG (7项): `grade_tbul_first`, `grade_bbul_first`, `grade_tdep_first`, `grade_bdep_first`, `grade_tlro_first`, `grade_blro_first`, `grade_crro_first`
+     - TB (3项): `grade_tbalw_first`, `grade_bbalw_first`, `grade_sbalw_first`
+2. **清洗与异常判定物化 ([backend/etl/clean_data.py](file:///d:/Ava/untitled1/untitled1_v2/backend/etl/clean_data.py))**：
+   - **解除时间限制**：全生命周期 100% 优先匹配最新 `Recipes.csv`；
+   - **过滤免检占位符**：`96, 99, 996, 9980, 9960, -9960` 过滤为 `NULL`，`1050` 规整为 `105.0`；
+   - **量纲统一**：TG 7 项测量值（米）乘以 1000 转换为毫米（mm）存储；
+   - **大小写标准化**：统一使用 `UPPER(TRIM(...))` 兼容大写 `'A'` 与小写 `'a'`；
+   - **异常判定物化字段**：
+     - 单工段异常 (0/1): `is_anomaly_tu`、`is_anomaly_tg`、`is_anomaly_tb`（7项/3项中任一指标不为 'A' 且非空则为 1）；
+     - 全局总异常 (0/1): `is_anomaly_overall`；
+     - 各工段超差项数: `anomaly_count_tu`, `anomaly_count_tg`, `anomaly_count_tb`, `anomaly_count_total`；
+     - 来源标签字符串: `anomaly_sources`（如 `'TU'`, `'TG'`, `'TB'`, `'TU+TG'`, 全正常为 `'NORMAL'`）。
+3. **CPK 计算解耦 ([backend/core/cpk.py](file:///d:/Ava/untitled1/untitled1_v2/backend/core/cpk.py))**：
+   - `get_spec_usl` 解除对已废弃的 Redshift `Group 1~4` 字段的依赖，完全以 Recipe 标准限与常量兜底。
+
+### 3. 端到端实测验证
+- 从 Redshift 单表拉取 500 条真实生产样本，清洗与异常统计验证通过：
+  - 正常率 97.2%，总异常率 2.8%（TU 异常 2.0%，TG 异常 0.6%，TB 异常 0.2%）；
+  - `anomaly_sources` 精确标记 `'TU'`、`'TG'`、`'TB'`；
+  - 154 万条大表 DuckDB 流式清洗耗时仅 28 秒。
+
+---
+
+## 14. 核心功能与视觉体验优化 (2026-09-16) - 全量生产异常监控图表双视图重构与日环比增幅折线升级
+
+### 1. 业务痛点与用户诉求
+1. **正常品绿色堆叠严重压缩异常分布**：
+   - 每日正常品约 4~5 万胎（占比 >96%），而异常品仅 1,000~2,000 胎（占比 2%~4%）；
+   - 若将正常品混在一起堆叠，Y 轴尺度被拉升至 50,000，上方的 TU/TG/TB 异常柱被挤压为仅数毫米的细窄条，无法直观辨析各工段异常的每日起伏与构成比例；
+2. **折线图颜色与指标重构**：
+   - 原综合异常率折线为红色（`#e11d48`），与 TU 异常柱颜色撞色混淆，难以辨别；
+   - 用户需要将绝对异常率折线替换为**相较于前一天的异常率增长比例（日环比增幅 %）**，以敏锐感知生产质量是“恶化”还是“好转”。
+
+### 2. 核心架构与落地细节
+1. **后端服务日环比增幅算法计算 ([backend/services/trend_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/trend_service.py))**：
+   - 在 `get_trend_production_anomaly()` 聚合出每日生产量与异常量后，新增相邻天日环比变动算法：
+     - `anomaly_growth_rate = round((curr_rate - prev_rate) / prev_rate * 100.0, 2)`（增长比例 %）；
+     - `anomaly_rate_diff = round(curr_rate - prev_rate, 2)`（绝对变动点 %p）；
+     - 首日数据设为 `None`（首日基准）；
+   - 适配单规格 (`article10`)、分期 (`phase`) 与班次 (`shift`) 动态条件。
+2. **前端组件双模式解耦与视觉强化 ([src/components/charts/ProductionAnomalyTrendChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/ProductionAnomalyTrendChart.vue))**：
+   - **双视图切换胶囊**：
+     - `🎯 纯异常工段分布 (默认推荐)`：完全不渲染正常品，左 Y 轴自适应为 `异常量 (胎)`（0~2,500 范围），TU（红）、TG（橙）、TB（紫）及多工段复合异常（粉）纵轴完全展开，结构层次极度分明；
+     - `📦 全量生产堆叠 (含正常品)`：底部叠加淡绿色正常品柱，左 Y 轴为 `生产总量 (胎)`，满足全厂总产能大盘宏观审视；
+   - **电光湛蓝高对比度折线**：
+     - 折线主色更换为科技电光蓝 `#0284c7`，点位采用白底蓝环；
+     - 数据绑定为 `anomaly_growth_rate`（日环比增幅 %）；
+     - 次 Y 轴引入 **0% 基准平衡虚线**，正负对称展开；
+   - **Tooltip 工段日环比与由高到低降序展示 (2026-09-16 紧急优化)**：
+     - 后端计算并下发 `tu_growth_rate`、`tg_growth_rate`、`tb_growth_rate`；
+     - 前端 Tooltip 弹窗中提取 TU、TG、TB 三大工序，按照其日环比增幅由高到低（降序）动态排序展示；
+     - 恶化最严重的工序自动排在首位，带红涨绿跌的日环比徽章（如 `+25.44% 📈`、`-10.20% 📉`），帮助质量工程师瞬间锁定当日问题工段。
+   - **Tooltip 丰富下钻增强**：
+     - 展示全厂排产总量、正常量及百分比；
+     - 突出标注 `⚡ 相较昨日增长比例: 📈 +XX.XX% (较昨日恶化 ⚠️)` 或 `📉 -XX.XX% (较昨日改善 🟢)`；
+     - 清晰罗列 TU/TG/TB 独立统计与多工段复合异常数据。
+
+---
+
+## 15. 生产异常数据深度排查与 CPK 视图日期/指标解耦控制优化 (2026-09-18)
+
+### 1. 2026-09-14 CRRO 异常与 CPK 平稳深度排查
+- **排查背景与用户疑问**：
+  - 在 Yield 异常图中选择日期 `2026-09-14` 并选中指标 `CRRO`（胎冠径向跳动），下拉框显示当日异常 318 胎（环比 +31.51%，前一日 242 胎，次日 51 胎）；
+  - 用户质疑：异常数大幅增加，为何下方 CPK 曲线极其平稳？是不是很多规格没有配方上下限导致的？
+- **数据底层实证结果**：
+  1. **“配方上下限缺失”假设彻底排除**：
+     - 当天全厂总排产 **49,306 胎**，有配方上限（USL 0.7~1.1mm）的达 **48,974 胎（覆盖率 99.33%）**；
+     - 全天仅 6 个规格无 USL（共 332 胎，仅占 0.67%），且这 332 胎无上限轮胎**异常判定数为 0**；
+     - 当天产生的 **318 胎非 A 级异常轮胎，100% 全部发生在有明确配方上限的规格上**（B级 111 胎、C级 173 胎、D级 22 胎、E级 12 胎）。
+  2. **“微观单规格暴跌 vs 宏观加权极其平稳”的数学稀释机理**：
+     - **单规格维度确实失控**：产生异常的 Top 规格单规格 CPK 暴跌至 **0.25 ~ 0.40**（如 `0311573010` 异常 42 胎，CPK=0.405；`0315135087` 异常 32 胎，CPK=0.302；`0449196000` 异常 20 胎，CPK=0.251）；
+     - **宏观加权严重稀释**：贡献前 52.5% 异常的 7 个失控规格排产总计仅 **1,340 胎，全厂产能占比仅 2.7%**；而占全厂 95% 以上产能的是日产 600~1100 胎的成熟大规格（单规格 CPK 达 **2.0 ~ 2.9**，异常数为 0）；
+     - 加权 CPK 计算公式为 $\text{加权 CPK} = \frac{\sum (\text{单规格CPK} \times \text{排产量})}{\text{总排产量}}$，2.7% 权重的劣质规格被 4.9 万胎优质大盘稀释，宏观 CPK 仅从 09-13 的 **1.8691** 微降至 09-14 的 **1.8659**（肉眼看似水平）。
+  3. **前端图表残留缺陷修复**：
+     - 排查发现图表组件残留了前序指标 `TDEP` 的均值 `8.176`（CRRO 实测均值为 0.416mm，CPK 为 1.865）；
+     - 在 [Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue#L127-L132) 的 `<TrendChart>` 组件上补充 `:key="cpkIndicator"`，确保指标切换时 100% 销毁旧图表并重新挂载新指标配置。
+
+### 2. CPK 视图日期点击与指标自动切换解耦优化
+- **业务诉求**：
+  - 用户明确要求：“在 cpk 这一页选择日期的时候 不要自动切换指标 当切回 cpk 的时候 切换日期时固定该指标 只切换日期”。
+- **根因分析**：
+  - 原 `handleDateSelect(date)` 中无条件调用 `applyTopProcessAndIndicatorLinkage(date)`，只要所选日期的日增幅第一指标与当前不同，便强制执行 `filterStore.setCpkIndicator(topIndicator)`，导致用户在 CPK 页面点击日期定位排查时指标频繁被篡改跳变。
+- **架构落地细节 ([Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue#L798-L865))**：
+  1. **双重模式守卫**：
+     - 在 `applyTopProcessAndIndicatorLinkage(date)` 开头新增模式守卫：`if (trendViewMode.value === 'cpk') return;`；
+     - 在 `handleDateSelect(date)` 中，仅在 `trendViewMode.value !== 'cpk'`（即【Yield 不良】视图）时才调用 `applyTopProcessAndIndicatorLinkage`；
+  2. **严格固定当前指标**：
+     - 当处于【CPK 波动】视图时（无论是直接在 CPK 视图点击日期，还是从 Yield 切回 CPK 后再选日期），**当前指标（如 CRRO）100% 锁定不变**；
+     - 点击 CPK 折线图的任意日期点时，**只切换所选日期（`selectedTrendDate`）**，并驱动下游的【核心规格行动表】、【工序流转桑基图】和【Lot 批次跟踪】针对当前固定指标更新当日定位数据。
+  3. **保留 Yield 不良智能推荐**：
+      - 仅当用户主动处于【Yield 不良】视图并在柱状图上点击特定日期时，系统才会自动切换为当天日环比增幅最大的工序指标。
+
+---
+
+## 16. 机台工艺参数推荐四列状态对比与多工序自适应重构 (2026-09-20)
+
+### 1. 业务诉求与视觉重构
+- **重构诉求**：用户要求在查看机台推荐参数时新增一列【改前状态】，完整呈现四列数值对比：
+  - 第 1 列：**【当前参数状态】**（当前目标机台在基准日的实际生效状态）
+  - 第 2 列：**【推荐修改前状态】**（推荐标杆方案在调参事件发生前的状态）
+  - 第 3 列：**【推荐修改后状态】**（推荐标杆方案在调参事件发生后的优化状态）
+  - 第 4 列：**【修改变化】**（差值高亮徽章如 `+3`、`-10`，未调整项完全留空）
+- **多工序智能自适应**：
+  - **CU 硫化机**（如 CU511, CUB04）：自动适配 14 项核心硫化工艺参数；
+  - **TB2 成型二段机**（如 TB263, TB2A1）：自动适配 30 项核心 PU 工艺参数；
+  - **TB1 成型一段机**（如 TB183, TB153）：自动适配 26 项核心 KM 工艺参数。
+
+### 2. 真实生产底表双源高可用计算机制 (严格零临时表)
+1. **数据源物理职责分离**：
+   - **全量配方底表** (`recipe_full_params_*.parquet`)：**仅提取 `ParameterValue` 纯净配方基准值**；
+   - **调参变动日志表** (`recipe_offset_changes_*.parquet`)：作为**机台偏置与调参事件真相来源**。
+2. **基准值四级高可用提取与 DuckDB 模式兼容**：
+   - 首选在选定日全量快照中提取；若无则自动跨历史 15 天全量切片检索；若仍无则从变动日志中提取随路记录的 `ParameterValue`；
+   - 使用 DuckDB `read_parquet(..., union_by_name=true)` 彻底解决不同历史 Parquet 文件中 `ParameterValue`/`TechOffsetValue` 存在 `DECIMAL(7,4)` 与 `DECIMAL(8,4)` 精度演进导致的类型转换报错。
+3. **机台当前状态回溯计算**：
+   - 过滤 `Workcenter == 目标机台` 且 `时间 <= 选定基准日`，按时间倒序取最新一条 `TechOffsetHistoryValueTo`（若无则取底表偏置或 0.0）；
+   - $\text{当前参数状态} = \text{ParameterValue} + \text{回溯生效偏置}$。
+4. **推荐状态与未修改项处理**：
+   - **推荐修改项**（`is_changed = True`）：
+     - 推荐修改前状态 = $\text{ParameterValue} + \text{TechOffsetHistoryValueFrom}$；
+     - 推荐修改后状态 = $\text{ParameterValue} + \text{TechOffsetHistoryValueTo}$；
+     - 修改变化 = $\text{推荐修改后状态} - \text{当前参数状态}$；
+     - 表格打上“⭐ 建议改动”金黄色标签，并高亮置顶。
+   - **未修改项**（`is_changed = False`）：
+     - 业务含义为“保持该机台现状即可，无需改动”；
+     - 推荐修改前状态与推荐修改后状态均等于当前参数状态；
+     - 修改变化列完全留空，不打建议改动标签。
+
+### 3. 代码改动与端到端实测验证
+- **后端服务** ([backend/services/status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py))：重构完成多工序核心参数集定义、高可用真实底表提取与四列组装算法。
+- **后端路由** ([backend/routers/cgrs.py](file:///d:/Ava/untitled1/untitled1_v2/backend/routers/cgrs.py))：`/api/cgrs/recommended-params` 同时支持 TB 与 CU 机台挂载四列状态对比。
+- **前端弹窗** ([src/components/dialogs/MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue))：弹窗宽度拓宽至 980px，支持自适应工序 Tag、四列排版、修改项置顶与未修改项留空。
+- **实测验证**：
+  - 本地离线验证与生产在线 API 调用（准实时 `CU511` 14项、`TB263` 30项）测试 100% 通过；
+  - `npm run build` 生产构建成功。
+
+---
+
+## 17. 工艺参数推荐四列全息状态表空值渲染修复与工步微胶囊徽标升级 (2026-09-20)
+
+### 1. 根本原因定位 (排查用户“都是空白”问题)
+- **原因剖析**：
+  - 前端表格组件 ([MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue)) 在模板中绑定的列属性名称为 `current_status_display`、`recommend_before_display`、`recommend_after_display`、`change_delta_display`；
+  - 后端服务 ([status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py)) 返回的键名为 `current_value_formatted`、`pre_recommended_value_formatted`、`recommended_value_formatted`、`change`；
+  - 键名不匹配导致前端对所有参数的数值读取全部为 `undefined`，从而在界面上仅渲染了单位（`mm`、`kN`、`bar`）而数值呈现全空白与短横线。
+- **视觉粘连问题**：
+  - `param_name`（如“机械手装胎高度”）与 `process_step`（如“机械手装胎”）在没有独立隔离小胶囊包裹时紧邻排列，视觉上形成文字重叠粘连。
+
+### 2. 深度修复方案
+1. **前端模板与取值万能容错**：
+   - 在前端编写了强健的万能降级取值器 `getRowVal(row, 'current' | 'pre' | 'post')` 与 `getRowChange(row)`，优先读取格式化字符串，缺失时自动回退数值，确保绝不出现 undefined 导致的空白；
+2. **后端别名字段（Aliases）双向同步输出**：
+   - 在 `status_cgrs_service.py` 的返回字典中同时挂载 `current_value_formatted` 与 `current_status_display` 等两套键名，确保向前向后绝对兼容；
+3. **工步微胶囊独立徽标与高亮重构**：
+   - 为工步名称添加独立的 `.step-pill`（硫化机呈现 `#eff6ff` 柔和淡蓝胶囊，成型机呈现 `#f0fdf4` 鼠尾草绿胶囊），与参数中文名清晰间隔；
+   - 对本次推荐修改项（`is_changed == true`）的参数名予以加粗与暖金高亮，置顶展示；
+4. **编译与产物同步**：
+   - 执行 `npm run build` 成功重新编译出生产静态文件包。
+
+---
+
+## 18. 工艺参数状态对比三列全维度日期标记与时间追溯增强 (2026-09-20)
+
+### 1. 业务痛点与机理
+- 当用户在四列对比表中查看参数时（例如合模力当前为 1314.14 kN，推荐修改前为 1264.14 kN，推荐修改后为 1314.14 kN，变化为 0），用户需要清晰获知当前数值与推荐数值分别是在哪一天被选取的，以判断时间先后关系与参数修改生效机理。
+
+### 2. 全链路实现方案
+1. **后端偏置生效时间追溯与推荐事件时间关联**：
+   - `status_cgrs_service.py` 在执行 `get_machine_current_offsets` 扫描变动日志时，同步提取每项参数的 `TechOffsetLocalDate`，生成 `offset_dates` 字典；
+   - 组装行数据时，为每一项参数挂载：
+     - `current_status_date`：该机台当前参数状态生效/选取日期；
+     - `recommend_event_date`：该项推荐方案选取自历史调参事件的发生日期；
+   - 顶层同步返回 `current_base_date` 与 `recommend_event_date`。
+2. **前端全维度日期标记与交互美化** ([MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue))：
+   - **顶部元信息栏**：挂载 `当前基准日期` 与 `推荐调参选取日期` 胶囊；
+   - **表头副标题**：
+     - 【当前参数状态】：副标题显示 `📅 基准日 (YYYY-MM-DD)`；
+     - 【推荐修改前状态】：副标题显示 `📅 选自 (YYYY-MM-DD)`；
+     - 【推荐修改后状态】：副标题显示 `⭐ 推荐方案`；
+   - **单元格行内日期芯片**：
+     - 当前参数数值下方挂载 `📅 YYYY-MM-DD` 微型胶囊芯片，Tooltip 显示完整时间；
+     - 推荐修改前后数值下方挂载 `📅 选自调参日` 胶囊芯片，未修改项清晰标注 `(同当前基准)` 与 `(保持现状)`；
+3. **构建验证**：
+   - 执行 `npm run build`，编译生成最新静态资源。
+
+---
+
+## 19. 当前参数状态列基准日期对齐与历史沿用追溯优化 (2026-09-20)
+
+### 1. 现象与原因深度剖析 (用户提问：“为什么当前参数状态的日期不一致”)
+- **现象**：
+  - 看板弹窗中当前基准日为 `2026-08-25`；
+  - 表格第一列【当前参数状态】中，第 1 行（合模暂停时间）下方标注 `📅 2026-08-02`，而第 2~14 行（合模力、装胎高度等）下方全标注 `📅 2026-08-25`；
+- **底层产生机理**：
+  1. **取数来源差异**：
+     - **第 1 行【合模暂停时间】**：机台 `CUM10` 在基准日（`2026-08-25`）之前，最近一次对该参数的修改发生在 `2026-08-02 06:51`（偏置从 5 改为 20）。在 08-02 至 08-25 期间无再次修改，因此回溯算法提取该修改记录时带出了其发生时间 `2026-08-02`；
+     - **第 2~14 行【其余各项】**：在 08-25 之前该机台未发生过变动记录，系统走兜底逻辑直接读取基准日当天（`2026-08-25`）的全量底表快照，日期记录为 `2026-08-25`；
+  2. **业务认知冲突**：
+     - 在工厂物理现实中，机台在 08-02 修改后一直沿用，到了 08-25 当天机台处于运行中，所有参数均属于 08-25 当天的生效运行值；
+     - 第一列直接将“历史修改发生日”当作该行的主日期显示，导致同一列内日期跳跃，给工程师带来“是否取错成了推荐日期”的严重困惑；
+  3. **关于变化为 0 的机理**：
+     - 推荐引擎选拔出 08-02 的调参效果最佳（推荐值 20s），而当前机台当前正是从 08-02 沿用至今的 20s，所以差值为 0（说明机台当前设定已符合最佳推荐）。
+
+### 2. 彻底对齐与交互升级方案
+1. **主日期 100% 统一对齐** ([status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py))：
+   - 将【当前参数状态】输出的 `current_status_date` 统一设为 `target_date`（如 `2026-08-25`），确保整列主日期一致；
+   - 新增 `is_offset_inherited` 与 `inherited_date` 字段，精确标识是否源于历史调参沿用；
+2. **优雅的溯源微标与提示** ([MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue))：
+   - 沿用历史调参的参数（如合模暂停时间），当前状态日期芯片显示 `📅 2026-08-25 (沿用 08-02)`，悬浮提示 `基准日 [2026-08-25] 运行参数（自 2026-08-02 06:51 调参生效后持续沿用至今）`；
+   - 未修改项统一显示 `📅 2026-08-25`；
+   - 推荐状态列增加 `📅 选自 2026-08-02`，使“当前日 08-25”与“推荐选取日 08-02”逻辑对比清晰通透。
+3. **重新打包编译**：
+   - 运行 `npm run build` 刷新 `dist/` 生产资源。
+
+---
+
+## 20. 最优工艺标杆全貌对比与无切片日期精准退避 (2026-09-20)
+
+### 1. 业务认知升级 (标杆对比 vs 动作建议)
+- **用户核心洞察**：
+  - “我除了想看修改参数最好的一个结果是对哪些参数进行了改动，同时我要查看最优参数和当前参数的区别和差异在哪，所以并不冲突！”
+  - 看板弹窗不仅是单纯的单点动作建议，更承担了**“最优工艺标杆工况全貌 vs 当前工况全貌（Benchmark Gap Analysis）”**的核心诊断定位。
+
+### 2. 全链路数据与计算闭环
+1. **配方基准值获取（严格不跨期借用）**：
+   - 仅在 `recipe_full_params_{target_date}.parquet` 存在时提取当天规格的 `ParameterValue`；
+   - 选中日期早于全量归档上线日（2026-09-03 之前，如 2026-08-25）时，严格不跨期借用，诚实置空返回 `{}`。
+2. **【第一列：当前参数状态】**：
+   - 若当天存在全量快照：`ParameterValue + 截至当天最新生效偏置 (变动日志优先，全量表TechOffsetValue兜底)`；
+   - 若选中日期早于 9-3：未曾修改过的参数显示 `-`（无快照），若变动日志中曾记录该参数则还原随路偏置设定。
+3. **【第二列：推荐修改前状态】与【第三列：推荐修改后状态 / 最优标杆状态】**：
+   - **修改项**：改前取 `PV + val_from`，改后取 `PV + val_to`；
+   - **未修改项**：
+     - 若推荐调参日当天存在全量快照（`rec_date >= 2026-09-11`）：直接匹配调参日全量表中该机台的真实运行值（改前 = 改后 = 调参日快照设定）；
+     - 若推荐调参日无全量快照（`rec_date < 2026-09-11`，如 8-02，方案 B）：改前与改后均置空显示 `-`（无快照），悬浮提示无调参日历史全量底表，聚焦修改项。
+4. **【第四列：修改变化 / 标杆差距】**：
+   - 统一公式：`第三列最优推荐值 - 第一列当前参数状态`；
+   - 修改项显示建议调整幅度；未修改项若存在设定偏差则直接显示差距（Gap），无偏差则留空显示 `-`。
+---
+
+## 21. 成型跨工段自适应路由与看板弹窗多模式拦截修复 (2026-09-20)
+
+### 1. 现象分析 (用户提问：“这个怎么是这样的”并附带 TB2A1 弹窗截图)
+- **现象**：
+  - 用户在看板点击 `TB2A1` 机台的“查看推荐参数”弹窗，界面没有呈现四列全息状态表看板（模式 A），而是退回到了旧版 3 列简易参数轨迹表（模式 B：`推荐调整工艺参数 | 工序工段 | 参数变更轨迹`，显示 `TB1_IL_DistanceServicerToDrum 145 ➔ 135 mm`）。
+- **根本原因**：
+  1. **前端拦截条件过严 (根本原因 1)**：
+     - 在 [MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue) 中，计算属性 `hasStatusComparison` 误绑定了 `recData.value?.has_status_snapshot`（选定日是否有全量底表快照）；
+     - 当选定日没有该规格配方全量切片时，`has_status_snapshot` 为 `false`，导致计算属性判定为 `false`，直接触发 `v-else` 退回到了模式 B；
+  2. **成型机台跨工段路由缺失 (根本原因 2)**：
+     - 用户点击的是成型二段机台 `TB2A1`，但成型工序一段（TB1）与二段（TB2）联动，历史最佳调参事件推荐调整的是一段的 `TB1_IL_DistanceServicerToDrum`（内衬层贴合位置，119 KM 工艺）；
+     - [status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py) 中 `calculate_status_recommendation_comparison` 在调用 `get_core_params_for_machine` 时遗漏传入 `recommendation_events`，导致系统硬编码将 `TB2A1` 路由到了 PU 二段（125）的 30 项参数清单；
+     - 二段 30 项清单中无法匹配一段的 `TB1_IL_DistanceServicerToDrum`，导致 `changed_params_count` 为 0 且无快照。
+
+### 2. 解决方案与实施
+1. **后端自适应智能工序路由**：
+   - 在 [status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py) 调用 `get_core_params_for_machine` 时传入 `recommendation_events=recommendation_events`；
+   - 系统检测到推荐参数以 `TB1` 开头或属于 119 工段时，自适应切换至 KM 成型一段 26 项工艺参数，`TB1_IL_DistanceServicerToDrum` 成功作为置顶第 1 行推荐项，并精准计算当前状态 130mm、改前 135mm、改后 125mm、变化 -5mm；
+2. **前端坚决渲染四列全息看板**：
+   - 在 [MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue) 中优化 `hasStatusComparison` 计算属性：只要 `status_comparison` 数组长度大于 0，即坚决渲染四列全息状态表（模式 A），不再退回模式 B；
+   - 无快照项在表格中统一展示 `- (无快照)` 并提供详尽 Tooltip 解释；
+3. **前端资源编译刷新**：
+   - 执行 `npm run build`，成功更新 `dist/` 资源包。
+
+---
+
+## 22. 硫化 CU 全量表机台直连匹配架构重构 (2026-09-20)
+
+### 1. 核心业务认知突破 (用户确立规则)
+- **业务规则**：
+  - **对于 CU（硫化工序），全量参数表不根据规格（MaterialMasterID / article10）进行匹配，只需要根据【时间 (target_date)】和【机台 (Workcenter)】进行匹配！**
+- **业务机理**：
+  - 硫化机的 13 项核心工艺参数（合模力、装胎高度、新旧胶囊定型压力、开合模时序、阀门开度、下环延迟等）是机台设备与模具工装的主控参数，物理上直接绑定在机台 Workcenter 上；
+  - 旧代码误将成型工序的“规格代码模糊过滤（`MaterialMasterID LIKE '%...%'`）”套用在硫化工序上，导致硫化机台本已完整存在的 13 项核心底表参数被规格条件错误过滤为空（造成图二中的误报【无快照】）。
+
+### 2. 代码重构落地 ([status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py))
+1. **`get_parameter_base_values` 重构**：
+   - 增加 `machine` 参数；
+   - 若 `process_type_id == "123"` 或机台为 CU/CT：彻底移除 `MaterialMasterID` 规格过滤条件，直接使用 `Workcenter IN ('{cands_sql}') AND ProcessTypeID = '123'` 抓取当天全量切片；
+   - 成型工序（119/125）继续保留规格代码识别过滤；
+2. **`get_recommendation_event_full_snapshot` 重构**：
+   - 若为 123 硫化工序：调参事件发生日的全量工况直接按机台匹配，精准提取调参当日全部 13 项参数的真实运行背景值；
+3. **`calculate_status_recommendation_comparison` 闭环**：
+   - 传入 `machine=machine` 到 `get_parameter_base_values`；
+   - 彻底修复图二中 `CUB13` 缺少快照的问题：除开关项参数外，全部 13 项核心工艺参数 100% 恢复真实数值呈现（开度 75/80%、开模位置 700mm、脱模延迟 3s 等全部到位），调参前、调参后、修改变化四列完整闭环！
+4. **编译与验证**：
+   - 执行 `npm run build` 刷新生产资源包，实测 `CUB13` API 返回 13 项全量参数，无快照问题彻底消除。
+
+---
+
+## 23. 看板参数名称精简与纯净黑体中文对齐 (2026-09-20)
+- **用户诉求**：“只保留黑色大字”；
+- **优化实施** ([MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue))：
+  - 彻底去除表格行内重复的人造工步蓝色小标签（`step-pill` / `process_step`）；
+  - 彻底去除下方浅灰色英文名称（`param_global_name`）；
+  - 100% 仅保留数据库底表中的标准黑体中文参数名称（`ParameterLocalName`），如 `机械手装胎高度`、`一次定型`、`合模力`；
+  - 界面视觉焦点纯净清晰，彻底消除了“一前一后写两个中文名字”的认知混淆；
+- **打包生效**：执行 `npm run build` 完成静态资源刷新。
+
+---
+
+## 24. 当前参数状态基准日全量快照优先级修复 (2026-09-21)
+- **问题现象**：
+  - 选定基准日为 `2026-09-16` 时，未改动参数（如一次定型、生胎高度）显示为 `(沿用09-10)` 或 `(沿用09-01)`，而 16 号全量底表中明明已有真实设定值（0.43、0.4、345），导致计算出不合理的修改变化（-0.05 / +41）；
+- **根因分析**：
+  - 旧逻辑中 `if pid in change_pvs:` 无条件优先使用了历史调参日志里的旧配方基准值 + 旧偏置，导致已被 16 号全量快照覆盖更新的参数仍错误地沿用了 10 天前的历史调参记录；
+- **修复方案** ([status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py))：
+  - 引入基准日全量快照提取：当 `target_date` 存在全量切片且该参数在基准日当天未发生新偏置调参时，直接采纳基准日全量快照中的真实运行值；
+  - 消除错误的历史沿用标签，使未改动项的当前值与标杆值完全一致（改动差值显示 `-`）。
+
+---
+
+## 25. 推荐参数弹窗默认只展示结果与一键展开修改前状态 (2026-09-21)
+- **用户诉求**：“改成默认只展示结果 点击后展示参数修改前状态”；
+- **优化实施** ([MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue))：
+  - 彻底精简弹窗头部的冗余控件（移除工序阶段下拉框、仅看需调整复选框、参数名即时搜索框）；
+  - **默认展示结果**：`showPreState` 初始默认值为 `false`，打开弹窗时【推荐修改前状态】列默认隐藏，用户第一眼直观聚焦核心三列结果：**工序参数名称 ➔ 当前参数状态 ➔ 推荐修改后状态 ➔ 修改变化**；
+  - **按需展开**：弹窗右上角提供 `展示修改前状态` 按钮（带眼睛图标）；用户若需要核对历史改前基线，点击该按钮即可展开【推荐修改前状态】列，按钮状态联动变为高亮的 `只看结果`，再次点击即可快速收起。
+

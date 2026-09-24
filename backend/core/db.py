@@ -27,10 +27,15 @@ def reload_duckdb_data() -> bool:
                 db_conn.execute("ALTER TABLE clean_yield ADD COLUMN tu_first_loc_timestamp VARCHAR")
                 db_conn.execute("UPDATE clean_yield SET tu_first_loc_timestamp = tu_first_shift_date")
             
+            if 'group' not in cols:
+                db_conn.execute("ALTER TABLE clean_yield ADD COLUMN \"group\" VARCHAR DEFAULT 'GROUP 1'")
+                db_conn.execute("UPDATE clean_yield SET \"group\" = 'GROUP 1'")
+            
             cnt_res = db_conn.execute("SELECT COUNT(*) FROM clean_yield").fetchone()
             CACHED_ROW_COUNT = cnt_res[0] if cnt_res else 0
         except Exception:
             pass
+
     
     cgrs_path = get_cgrs_data_path()
     if cgrs_path and os.path.exists(cgrs_path):
@@ -71,13 +76,26 @@ def reload_duckdb_data() -> bool:
 
 
 def qry(sql: str, params=None):
-    """执行 DuckDB 查询，使用线程安全 Cursor 并支持参数化绑定以消除 SQL 注入风险"""
+    """执行 DuckDB 查询，使用线程安全 Cursor 并支持参数化绑定以消除 SQL 注入风险，支持自愈式热加载"""
+    global CACHED_ROW_COUNT
     cursor = db_conn.cursor()
-    if params:
-        rel = cursor.execute(sql, params)
-    else:
-        rel = cursor.execute(sql)
+    try:
+        if params:
+            rel = cursor.execute(sql, params)
+        else:
+            rel = cursor.execute(sql)
+    except duckdb.CatalogException as ce:
+        if "clean_yield" in str(ce):
+            reload_duckdb_data()
+            if params:
+                rel = cursor.execute(sql, params)
+            else:
+                rel = cursor.execute(sql)
+        else:
+            cursor.close()
+            raise ce
     cols = [d[0] for d in rel.description]
     rows = rel.fetchall()
     cursor.close()
     return [dict(zip(cols, r)) for r in rows]
+

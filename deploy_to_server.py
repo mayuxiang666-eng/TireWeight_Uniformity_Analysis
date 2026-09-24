@@ -131,6 +131,9 @@ def deploy(skip_build=False, skip_restart=False):
         os.path.join(LOCAL_ROOT, "backend", "requirements.txt"),
         os.path.join(TARGET_SERVER_DIR, "backend", "requirements.txt")
     )
+    standalone_src = os.path.join(LOCAL_ROOT, "backend", "status_param_recommendation_standalone.py")
+    if os.path.exists(standalone_src):
+        copy_file_safe(standalone_src, os.path.join(TARGET_SERVER_DIR, "backend", "status_param_recommendation_standalone.py"))
 
     # 3.3 后端模块化组件 (core, services, routers) 与配置
     print("  -> 同步后端模块化组件 (core, services, routers)...")
@@ -165,13 +168,16 @@ def deploy(skip_build=False, skip_restart=False):
     )
 
     # 3.5 配方基准与业务数据 (只拷贝基准 CSV，不覆盖现场 parquet)
-    print("  -> 校验并同步基准配方与参数 (Recipes.csv, CGRS.csv)...")
+    print("  -> 校验并同步基准配方与参数 (Recipes.csv, CGRS.csv, Status-CGRS.csv)...")
     recipes_src = os.path.join(LOCAL_ROOT, "backend", "data", "Recipes.csv")
     if os.path.exists(recipes_src):
         copy_file_safe(recipes_src, os.path.join(TARGET_SERVER_DIR, "backend", "data", "Recipes.csv"))
     cgrs_src = os.path.join(LOCAL_ROOT, "backend", "data", "CGRS.csv")
     if os.path.exists(cgrs_src):
         copy_file_safe(cgrs_src, os.path.join(TARGET_SERVER_DIR, "backend", "data", "CGRS.csv"))
+    status_cgrs_src = os.path.join(LOCAL_ROOT, "backend", "data", "Status-CGRS.csv")
+    if os.path.exists(status_cgrs_src):
+        copy_file_safe(status_cgrs_src, os.path.join(TARGET_SERVER_DIR, "backend", "data", "Status-CGRS.csv"))
 
     # 3.6 运维控制脚本与 Nginx 配置
     print("  -> 同步运维批处理脚本与 Nginx 配置文件...")

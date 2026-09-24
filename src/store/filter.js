@@ -21,6 +21,106 @@ export const useFilterStore = defineStore('filter', () => {
   // 全局 CPK 指标切换状态：'rfpp' | 'rfh1'
   const cpkIndicator = ref('rfpp')
 
+  // 基础 17 项指标分组配置 (TU, TG, TB)
+  const BASE_INDICATOR_GROUPS = [
+    {
+      group: 'TU',
+      label: 'TU',
+      options: [
+        { label: 'RFPP', value: 'rfpp' },
+        { label: 'RFH1', value: 'rfh1' },
+        { label: 'RFH2', value: 'rfh2' },
+        { label: 'LFPP', value: 'lfpp' },
+        { label: 'LFH1', value: 'lfh1' },
+        { label: 'CONY', value: 'cony' },
+        { label: 'PLYS', value: 'plys' }
+      ]
+    },
+    {
+      group: 'TG',
+      label: 'TG',
+      options: [
+        { label: 'TBUL', value: 'tbul' },
+        { label: 'BBUL', value: 'bbul' },
+        { label: 'TDEP', value: 'tdep' },
+        { label: 'BDEP', value: 'bdep' },
+        { label: 'TLRO', value: 'tlro' },
+        { label: 'BLRO', value: 'blro' },
+        { label: 'CRRO', value: 'crro' }
+      ]
+    },
+    {
+      group: 'TB',
+      label: 'TB',
+      options: [
+        { label: 'TBALW', value: 'tbalw' },
+        { label: 'BBALW', value: 'bbalw' },
+        { label: 'SBALW', value: 'sbalw' }
+      ]
+    }
+  ]
+
+  // 响应式指标分组列表（支持选中日期后动态置顶排行第一工序与指标增幅排序）
+  const indicatorGroups = ref(JSON.parse(JSON.stringify(BASE_INDICATOR_GROUPS)))
+
+  function updateIndicatorPriority(topProcess, detailIndicators, date) {
+    if (!date || !topProcess) {
+      indicatorGroups.value = JSON.parse(JSON.stringify(BASE_INDICATOR_GROUPS))
+      return
+    }
+
+    const groupsCopy = JSON.parse(JSON.stringify(BASE_INDICATOR_GROUPS))
+    
+    // 如果有 detailIndicators，对各分组内的选项按增幅排序并附加增幅文案
+    if (detailIndicators) {
+      for (const grp of groupsCopy) {
+        const details = detailIndicators[grp.group]
+        if (details && Array.isArray(details) && details.length > 0) {
+          grp.options = details.map((d, dIdx) => {
+            let growthText = '-'
+            let growthClass = 'neutral'
+            if (d.growth_rate !== null && d.growth_rate !== undefined) {
+              if (d.growth_rate > 0) {
+                growthText = `+${d.growth_rate}%`
+                growthClass = 'up'
+              } else if (d.growth_rate < 0) {
+                growthText = `${d.growth_rate}%`
+                growthClass = 'down'
+              } else {
+                growthText = '0.00%'
+                growthClass = 'neutral'
+              }
+            }
+            return {
+              label: d.label || d.key.toUpperCase(),
+              value: d.key,
+              growthRate: d.growth_rate,
+              growthText,
+              growthClass,
+              count: d.count,
+              rate: d.rate,
+              prevCount: d.prev_count,
+              prevDate: d.prev_date,
+              nextCount: d.next_count,
+              nextDate: d.next_date,
+              currDate: d.date || date,
+              isMax: grp.group === topProcess && dIdx === 0
+            }
+          })
+        }
+      }
+    }
+
+    // 将排行第一的工序组优先置顶
+    const topGroup = groupsCopy.find(g => g.group === topProcess)
+    const otherGroups = groupsCopy.filter(g => g.group !== topProcess)
+    if (topGroup) {
+      indicatorGroups.value = [topGroup, ...otherGroups]
+    } else {
+      indicatorGroups.value = groupsCopy
+    }
+  }
+
   // 全局时间维度选择（默认：终检 TU 时间）
   const selectedTimeCol = ref('tu_first_loc_timestamp')
 
@@ -173,6 +273,7 @@ export const useFilterStore = defineStore('filter', () => {
     selectedMachineCluster.value = 0
     selectedPhase.value = 'all'
     selectedShift.value = 'all'
+    indicatorGroups.value = JSON.parse(JSON.stringify(BASE_INDICATOR_GROUPS))
   }
 
   return {
@@ -196,6 +297,8 @@ export const useFilterStore = defineStore('filter', () => {
     selectedMachineCluster,
     hasAnalysisPeriod,
     cpkIndicator,
+    indicatorGroups,
+    updateIndicatorPriority,
     selectedTimeCol,
     timeColOptions,
     weightTolerance,

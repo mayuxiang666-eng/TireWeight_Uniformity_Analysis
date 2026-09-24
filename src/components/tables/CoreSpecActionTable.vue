@@ -159,8 +159,8 @@
           align="center"
         >
           <template #default="{ row }">
-            <template v-if="row.can_click_recommend">
-              <el-tooltip :content="row.action_tooltip || '点击查看该规格历史最优工艺参数'" placement="top">
+            <template v-if="isRecommendButton(row)">
+              <el-tooltip :content="row.action_tooltip || '点击查看该规格历史最优工艺参数推荐与基准对比'" placement="top">
                 <button
                   type="button"
                   class="action-btn"
@@ -202,6 +202,13 @@ const props = defineProps({
 const emit = defineEmits(['drill-down', 'open-recommend'])
 
 const isWeight = computed(() => props.indicator === 'weight')
+
+function isRecommendButton(row) {
+  if (!row) return false
+  if (row.can_click_recommend) return true
+  const txt = String(row.action_text || '')
+  return txt.includes('推荐参数') || txt.includes('查看')
+}
 
 // 规格行合并与明细行数据结构
 const tableData = computed(() => {
@@ -266,6 +273,7 @@ function handleRowClick(row) {
 }
 
 function handleOpenRecommend(row) {
+  console.log('[CoreSpecActionTable] 点击查看推荐参数:', row)
   emit('open-recommend', row)
 }
 

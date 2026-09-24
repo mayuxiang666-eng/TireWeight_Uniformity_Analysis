@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from backend.core.db import qry
-from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl
+from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl, INDICATORS_SPEC
 from backend.core.serializer import sanitize_data
 from backend.core.time_utils import build_production_time_where, get_phase_sql_condition
 
@@ -120,10 +120,11 @@ def get_machine_combination_tree(
         if target_date in ("null", "None", ""):
             target_date = None
 
-        if indicator == "cony":
-            indicator_col = "cony_first"
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+        if indicator == "weight":
+            indicator_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
         else:
-            indicator_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            indicator_col = spec_cfg["col"]
 
         # 计算规格 USL/LSL 基准 (确保与看板全局统一)
         global_usl, global_lsl = get_spec_limits(spec, indicator)
@@ -254,12 +255,11 @@ def get_process_sankey(
         except Exception:
             tolerance = 0.8
 
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
         if indicator == "weight":
             ind_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
-        elif indicator == "cony":
-            ind_col = "cony_first"
         else:
-            ind_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            ind_col = spec_cfg["col"]
         
         warning_machines = {}
         machine_cpk_lookup_details = {}
@@ -624,12 +624,11 @@ def get_best_process_sankey(
     min_samples: int = 10,
 ):
     try:
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
         if indicator == "weight":
             ind_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
-        elif indicator == "cony":
-            ind_col = "cony_first"
         else:
-            ind_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            ind_col = spec_cfg["col"]
         where_clause = "WHERE article10 = ?"
         params = [article10]
 

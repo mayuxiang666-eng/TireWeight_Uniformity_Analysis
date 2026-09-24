@@ -9,7 +9,8 @@ from fastapi import APIRouter, Query
 from backend.services.trend_service import (
     get_filter_articles as svc_get_filter_articles,
     get_filter_daterange as svc_get_filter_daterange,
-    get_trend_cpk as svc_get_trend_cpk
+    get_trend_cpk as svc_get_trend_cpk,
+    get_trend_production_anomaly as svc_get_trend_production_anomaly
 )
 
 router = APIRouter()
@@ -30,6 +31,7 @@ def get_date_range():
 @router.get("/trend/cpk")
 def get_cpk_trend(
     grain: str = Query("daily"),     # "daily" | "hourly" | "minute" | "weekly"
+    indicator: str = Query("rfpp"),  # 指标类型: 17项工序指标之一或weight
     article10: Optional[str] = Query(None),
     exclude_articles: Optional[str] = Query(None), # 英文逗号分割的需剔除规格代码列表
     time_col: Optional[str] = Query("tu_first_loc_timestamp"),
@@ -40,6 +42,7 @@ def get_cpk_trend(
     """获取宏观 CPK 趋势统计数据 (支持多时间粒度、全厂加权与单规格池化、三班与期别过滤)"""
     return svc_get_trend_cpk(
         grain=grain,
+        indicator=indicator,
         article10=article10,
         exclude_articles=exclude_articles,
         time_col=time_col,
@@ -47,3 +50,22 @@ def get_cpk_trend(
         shift=shift,
         exclude_outliers=exclude_outliers
     )
+
+
+@router.get("/trend/production-anomaly")
+def get_trend_production_anomaly(
+    grain: str = Query("daily"),
+    article10: Optional[str] = Query(None),
+    time_col: Optional[str] = Query("tu_first_loc_timestamp"),
+    phase: Optional[str] = Query("all"),
+    shift: Optional[str] = Query("all")
+):
+    """获取每日/每周生产总量、正常量、TU/TG/TB 异常量及异常率聚合统计"""
+    return svc_get_trend_production_anomaly(
+        grain=grain,
+        article10=article10,
+        time_col=time_col,
+        phase=phase,
+        shift=shift
+    )
+

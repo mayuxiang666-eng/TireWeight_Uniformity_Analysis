@@ -194,11 +194,23 @@ function handleMouseUp(e) {
 }
 
 const option = computed(() => {
-  const activeKey = props.indicator === 'cony'
-    ? 'CONY 综合 实际值'
-    : (props.indicator === 'weight' ? '胎重 综合 偏差' : (props.indicator === 'rfpp' ? 'RFPP 综合 CPK' : 'RFH1 综合 CPK'))
+  const cpkTrendsObj = props.cpkData.cpk_trends || {}
+  const allKeys = Object.keys(cpkTrendsObj).filter(k => k !== 'current_cpk')
+  let activeKey = 'current_cpk'
+  if (props.indicator === 'cony') {
+    activeKey = cpkTrendsObj['CONY 综合 实际值'] ? 'CONY 综合 实际值' : (cpkTrendsObj['CONY 综合 CPK'] ? 'CONY 综合 CPK' : (allKeys[0] || 'current_cpk'))
+  } else if (props.indicator === 'weight') {
+    activeKey = '胎重 综合 偏差'
+  } else if (props.indicator === 'rfpp') {
+    activeKey = 'RFPP 综合 CPK'
+  } else if (props.indicator === 'rfh1') {
+    activeKey = 'RFH1 综合 CPK'
+  } else {
+    const matchedKey = allKeys.find(k => k.toLowerCase().includes(props.indicator.toLowerCase()))
+    activeKey = matchedKey || `${props.indicator.toUpperCase()} 综合 CPK`
+  }
   const labels = props.cpkData.dates || []
-  const cpkValues = props.cpkData.cpk_trends?.[activeKey] || []
+  const cpkValues = cpkTrendsObj[activeKey] || cpkTrendsObj['current_cpk'] || []
 
   // Calculate Mean and StdDev dynamically
   const validValues = cpkValues.filter(v => v !== null && !isNaN(v))

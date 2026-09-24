@@ -16,7 +16,7 @@ import duckdb
 
 from backend.core.config import get_cleaned_data_path
 from backend.core.db import qry
-from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl
+from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl, INDICATORS_SPEC
 from backend.core.serializer import sanitize_data
 from backend.core.time_utils import build_production_time_where, get_phase_sql_condition
 
@@ -38,28 +38,31 @@ def set_article_helpers(top_warning_provider=None, best_tu_provider=None, cgrs_c
 def _get_top_warning_provider():
     global _top_warning_provider
     if _top_warning_provider is None:
-        import sys
-        mod = sys.modules.get("backend.services.machine_service")
-        if mod:
-            _top_warning_provider = getattr(mod, "get_top_warning_machines", None)
+        try:
+            from backend.services.machine_service import get_top_warning_machines
+            _top_warning_provider = get_top_warning_machines
+        except Exception:
+            pass
     return _top_warning_provider
 
 def _get_best_tu_provider():
     global _best_tu_provider
     if _best_tu_provider is None:
-        import sys
-        mod = sys.modules.get("backend.services.machine_service")
-        if mod:
-            _best_tu_provider = getattr(mod, "get_best_tu_machine_for_spec", None)
+        try:
+            from backend.services.machine_service import get_best_tu_machine_for_spec
+            _best_tu_provider = get_best_tu_machine_for_spec
+        except Exception:
+            pass
     return _best_tu_provider
 
 def _get_cgrs_comparator():
     global _cgrs_cpk_comparator
     if _cgrs_cpk_comparator is None:
-        import sys
-        mod = sys.modules.get("backend.services.cgrs_service")
-        if mod:
-            _cgrs_cpk_comparator = getattr(mod, "calculate_cgrs_cpk_comparison", None)
+        try:
+            from backend.services.cgrs_service import calculate_cgrs_cpk_comparison
+            _cgrs_cpk_comparator = calculate_cgrs_cpk_comparison
+        except Exception:
+            pass
     return _cgrs_cpk_comparator
 
 def get_article_phase(article10: str):
@@ -153,14 +156,12 @@ def get_spec_warning_machines_detailed(item: dict, indicator: str, target_date: 
         target_dt = datetime.strptime(target_date, "%Y-%m-%d")
         d_start = (target_dt - timedelta(days=3)).strftime("%Y-%m-%d")
 
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC.get("rfpp"))
         if indicator == "weight":
             ind_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
             usl, lsl = None, None
-        elif indicator == "cony":
-            ind_col = "cony_first"
-            usl, lsl = get_spec_limits(article10, indicator)
         else:
-            ind_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            ind_col = spec_cfg["col"]
             usl, lsl = get_spec_limits(article10, indicator)
 
         _bt = _get_best_tu_provider()
@@ -653,8 +654,16 @@ def get_warning_cpk(
                 "data": sanitize_data(final_rows)
             }
 
-        ind_col = "cony_first" if indicator == "cony" else ("rfppwc_first" if indicator == "rfpp" else "rfh1wc_first")
-        
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+        ind_col = spec_cfg["col"]
+        usl_col = spec_cfg.get("usl_col")
+        lsl_col = spec_cfg.get("lsl_col")
+        scale = spec_cfg.get("scale", 1.0)
+        is_double = spec_cfg.get("is_double", False)
+
+        usl_expr = f"COALESCE(ANY_VALUE({usl_col}), NULL) * {scale}" if usl_col else "NULL"
+        lsl_expr = f"COALESCE(ANY_VALUE({lsl_col}), NULL) * {scale}" if (is_double and lsl_col) else "NULL"
+
         # 1. 查询当天全厂所有规格数据，用于计算全厂加权系统 CPK 基准
         sql_all = f"""
             SELECT
@@ -664,20 +673,8 @@ def get_warning_cpk(
                 COUNT(CASE WHEN ct_shop IS NOT NULL AND UPPER(CAST(ct_shop AS VARCHAR)) LIKE '%P4%' THEN 1 END) AS p4_count,
                 AVG(TRY_CAST({ind_col} AS DOUBLE)) AS avg_v,
                 STDDEV(TRY_CAST({ind_col} AS DOUBLE)) AS std_v,
-                COALESCE(ANY_VALUE(standard_rfpp),
-                         CASE ANY_VALUE("group")
-                             WHEN 'GROUP 1'  THEN 10.5
-                             WHEN 'GROUP 2A' THEN 11.5
-                             WHEN 'GROUP 2B' THEN 12.5
-                             WHEN 'GROUP 3'  THEN 12.5
-                         END) * 10.0 AS usl_rfpp,
-                COALESCE(ANY_VALUE(standard_rfh1),
-                         CASE ANY_VALUE("group")
-                             WHEN 'GROUP 1'  THEN 7.5
-                             WHEN 'GROUP 2A' THEN 8.5
-                             WHEN 'GROUP 2B' THEN 9.0
-                             WHEN 'GROUP 3'  THEN 9.5
-                         END) * 10.0 AS usl_rfh1
+                {usl_expr} AS usl_val,
+                {lsl_expr} AS lsl_val
             FROM clean_yield
             WHERE {date_col} = ?::DATE
               AND {ind_col} IS NOT NULL
@@ -712,18 +709,15 @@ def get_warning_cpk(
 
             avg_v = r['avg_v'] or 0.0
             std_v = r['std_v'] or 0.0
+            usl_v = r.get('usl_val')
+            lsl_v = r.get('lsl_val')
             
-            if indicator == "cony":
-                usl_v, lsl_v = get_spec_limits(art, "cony")
-                val = calc_cpk(avg_v, std_v, usl_v, lsl_v)
-            else:
-                usl_v = r['usl_rfpp'] if indicator == "rfpp" else r['usl_rfh1']
-                if std_v > 1e-6 and usl_v is not None:
-                    val = calc_cpk(avg_v, std_v, usl_v, None)
-                else:
-                    val = 1.33
-            
-            if np.isnan(val) or np.isinf(val):
+            # 若该指标配方中无定义，严格遵循配方表，该规格不参与本指标 CPK 统计
+            if usl_v is None and lsl_v is None:
+                continue
+
+            val = calc_cpk(avg_v, std_v, usl_v, lsl_v)
+            if val is None or np.isnan(val) or np.isinf(val):
                 continue
                 
             valid_specs.append({
@@ -1000,10 +994,18 @@ def get_barcode_measurements(
                 "data": sanitize_data(data_list)
             }
 
-        # RFPP / RFH1 / CONY 指标
-        ind_col = "cony_first" if indicator == "cony" else ("rfppwc_first" if indicator == "rfpp" else "rfh1wc_first")
-        ind_label = "CONY 锥度" if indicator == "cony" else ("RFPP 径向力峰峰值" if indicator == "rfpp" else "RFH1 径向力一次谐波")
-        unit = "N"
+        # 17 项工序指标测量明细
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+        ind_col = spec_cfg["col"]
+        ind_label = spec_cfg.get("label", indicator.upper())
+        unit = spec_cfg.get("unit", "")
+        usl_col = spec_cfg.get("usl_col")
+        lsl_col = spec_cfg.get("lsl_col")
+        scale = spec_cfg.get("scale", 1.0)
+        is_double = spec_cfg.get("is_double", False)
+
+        usl_expr = f"COALESCE(TRY_CAST({usl_col} AS DOUBLE), NULL) * {scale}" if usl_col else "NULL"
+        lsl_expr = f"COALESCE(TRY_CAST({lsl_col} AS DOUBLE), NULL) * {scale}" if (is_double and lsl_col) else "NULL"
 
         sql = f"""
             SELECT 
@@ -1013,22 +1015,8 @@ def get_barcode_measurements(
                 gt_workcenter,
                 tu_first_workcenter,
                 "group",
-                standard_rfpp,
-                standard_rfh1,
-                COALESCE(TRY_CAST(standard_rfpp AS DOUBLE), 
-                         CASE "group" 
-                             WHEN 'GROUP 1'  THEN 10.5 
-                             WHEN 'GROUP 2A' THEN 11.5 
-                             WHEN 'GROUP 2B' THEN 12.5 
-                             WHEN 'GROUP 3'  THEN 12.5 
-                         END) * 10.0 AS usl_rfpp,
-                COALESCE(TRY_CAST(standard_rfh1 AS DOUBLE), 
-                         CASE "group" 
-                             WHEN 'GROUP 1'  THEN 7.5 
-                             WHEN 'GROUP 2A' THEN 8.5 
-                             WHEN 'GROUP 2B' THEN 9.0 
-                             WHEN 'GROUP 3'  THEN 9.5 
-                         END) * 10.0 AS usl_rfh1
+                {usl_expr} AS usl_val,
+                {lsl_expr} AS lsl_val
             FROM clean_yield
             WHERE {date_col} = ?::DATE
               AND article10 = ?
@@ -1062,17 +1050,11 @@ def get_barcode_measurements(
         mean_v = float(np.mean(vals)) if vals else 0.0
         std_v = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
         
-        if indicator == "cony":
-            usl_v, lsl_v = get_spec_limits(article10, "cony")
-            cpk_v = calc_cpk(mean_v, std_v, usl_v, lsl_v)
-            out_count = sum(1 for v in vals if (usl_v is not None and v > usl_v) or (lsl_v is not None and v < lsl_v))
-        else:
-            usl_v = float(rows[0]['usl_rfpp']) if indicator == "rfpp" and rows[0].get('usl_rfpp') is not None else (
-                    float(rows[0]['usl_rfh1']) if indicator == "rfh1" and rows[0].get('usl_rfh1') is not None else 105.0)
-            lsl_v = None
-            cpk_v = (usl_v - mean_v) / (3.0 * std_v) if std_v > 1e-6 else 1.33
-            out_count = sum(1 for v in vals if v > usl_v)
-
+        usl_v = float(rows[0]['usl_val']) if rows and rows[0].get('usl_val') is not None else None
+        lsl_v = float(rows[0]['lsl_val']) if rows and rows[0].get('lsl_val') is not None else None
+        
+        cpk_v = calc_cpk(mean_v, std_v, usl_v, lsl_v)
+        out_count = sum(1 for v in vals if (usl_v is not None and v > usl_v) or (lsl_v is not None and v < lsl_v))
         out_rate = round(out_count / len(vals) * 100, 2) if vals else 0.0
         
         data_list = []
@@ -1146,12 +1128,11 @@ def get_lot_cpk_trend(
             min_samples = int(min_samples)
         except Exception:
             min_samples = 1
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
         if indicator == "weight":
             ind_col = "TRY_CAST(tire_weight_actual_first AS DOUBLE)"
-        elif indicator == "cony":
-            ind_col = "cony_first"
         else:
-            ind_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            ind_col = spec_cfg["col"]
         date_col = "tu_first_shift_date"
 
         # 1. 确定目标日期与日期范围
@@ -1392,12 +1373,11 @@ def get_lot_barcode_detail(
     indicator: str = "rfpp"
 ):
     try:
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
         if indicator == "weight":
             ind_col = "TRY_CAST(tire_weight_actual_first AS DOUBLE)"
-        elif indicator == "cony":
-            ind_col = "cony_first"
         else:
-            ind_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            ind_col = spec_cfg["col"]
 
         # 中文工段名称映射到数据库 _lot 字段前缀
         prefix_map = {

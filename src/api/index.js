@@ -20,6 +20,9 @@ export const api = {
   /** CPK 趋势 */
   getCpkTrend: (params = {}) => http.get('/api/trend/cpk', { params }),
 
+  /** 每日生产总量、正常量与TU/TG/TB异常聚合统计趋势 */
+  getTrendProductionAnomaly: (params = {}) => http.get('/api/trend/production-anomaly', { params }),
+
   /** 成型机台 CGRS 参数变更记录查询 */
   getCgrsRecords: (params = {}) => http.get('/api/cgrs/records', { params }),
 

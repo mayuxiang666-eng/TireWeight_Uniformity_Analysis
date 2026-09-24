@@ -6,11 +6,33 @@
       <div id="tour-cpk-trend" class="card full-width">
         <div class="card-header">
           <div>
-            <div class="card-title" style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span>{{ tab1SelectedArticle ? tab1SelectedArticle + ' · ' : '' }}整体指标预览 (CPK指标)</span>
+            <div class="card-title" style="display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span>{{ tab1SelectedArticle ? tab1SelectedArticle + ' · ' : '' }}整体指标预览</span>
+              
+              <!-- Tab 视图切换控件 -->
+              <el-radio-group
+                v-model="trendViewMode"
+                size="small"
+                class="trend-mode-switch"
+                @change="handleTrendViewModeChange"
+              >
+                <el-radio-button value="cpk">CPK 波动</el-radio-button>
+                <el-radio-button value="anomaly">Yield 不良</el-radio-button>
+              </el-radio-group>
+
               <el-tooltip placement="top" raw-content>
                 <template #content>
-                  <div v-if="cpkIndicator === 'cony'" style="max-width: 290px; font-size: 12px; line-height: 1.6; padding: 4px;">
+                  <div v-if="trendViewMode === 'anomaly'" style="max-width: 320px; font-size: 12px; line-height: 1.6; padding: 4px;">
+                    <strong style="color: #2563eb;">Yield 不良分析 (工序堆叠柱 + 增长比例折线)：</strong><br/>
+                    • <strong>工序异常分布</strong>：聚焦全厂纯异常工段分布（纵轴充分展开，消除合格品视觉压缩）：<br/>
+                    &nbsp;&nbsp;• <strong>TU 均匀性异常</strong> (TU 7项评级非A)<br/>
+                    &nbsp;&nbsp;• <strong>TG 几何尺寸异常</strong> (TG 7项评级非A)<br/>
+                    &nbsp;&nbsp;• <strong>TB 动平衡异常</strong> (TB 3项评级非A)<br/>
+                    &nbsp;&nbsp;• <strong>多工段复合异常</strong> (跨工段同时非A)<br/>
+                    • <strong>日环比增幅折线 (次 Y 轴)</strong>：相较于前一天的综合异常率增长比例 (%)；<br/>
+                    • <strong>联动下钻</strong>：点击任意日期的柱子，自动下钻当日核心规格与机台行动表。
+                  </div>
+                  <div v-else-if="cpkIndicator === 'cony'" style="max-width: 290px; font-size: 12px; line-height: 1.6; padding: 4px;">
                     <strong style="color: #10b981;">过程能力指数 (CONY 双侧 CPK)：</strong><br/>
                     以规格 (Article10) 为基本单元计算单日双侧 CPK：<br/>
                     <code>CPK = min((USL - μ)/(3σ), (μ - LSL)/(3σ))</code><br/>
@@ -34,6 +56,7 @@
                 <span class="capsule-label">数据最近刷新时间:</span>
                 <span class="capsule-val">{{ filterStore.dataUpdateTime }}</span>
               </div>
+
             </div>
             <div class="breadcrumb mt-4" v-if="tab1SelectedArticle" style="display: flex; align-items: center; gap: 8px;">
               <el-button size="small" type="primary" plain :icon="RefreshLeft" @click="resetTab1Article()">全部规格 (重置)</el-button>
@@ -41,7 +64,30 @@
               <span class="breadcrumb-current" style="font-weight: 600; color: #1e293b; font-family: 'JetBrains Mono', monospace; font-size: 13px;">{{ tab1SelectedArticle }}</span>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 16px;">
+          <div id="tour-cpk-controls" style="display: flex; align-items: center; gap: 16px;">
+            <!-- Yield 不良视图下的报警模式选择 (放置在 Main Hall 前面，无图标) -->
+            <template v-if="trendViewMode !== 'cpk'">
+              <div class="anomaly-alarm-controls" style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 600;">
+                  报警模式:
+                </span>
+                <el-checkbox-group v-model="anomalyAlarmModes" size="small">
+                  <el-checkbox value="consecutive">
+                    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
+                      <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f97316;"></span>
+                      连续两天上涨
+                    </span>
+                  </el-checkbox>
+                  <el-checkbox value="top5">
+                    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
+                      <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444;"></span>
+                      极值点 Top 5
+                    </span>
+                  </el-checkbox>
+                </el-checkbox-group>
+              </div>
+            </template>
+
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 600;">Main Hall:</span>
               <el-radio-group
@@ -53,37 +99,62 @@
                 <el-radio-button value="p3">三期</el-radio-button>
                 <el-radio-button value="p4">四期</el-radio-button>
               </el-radio-group>
+
+              <el-button
+                size="small"
+                :icon="RefreshRight"
+                plain
+                style="margin-left: 4px; font-weight: 500;"
+                title="清除选定日期、规格聚焦及筛选，恢复总体趋势图"
+                @click="resetOverallTrend"
+              >
+                重置
+              </el-button>
             </div>
             
-            <el-checkbox
-              v-if="!tab1SelectedArticle"
-              v-model="excludeTop10"
-              size="small"
-              style="margin-left: 10px; font-weight: 500;"
-              @change="handleExcludeTop10Change"
-            >
-              剔除 Top 10 预警规格
-            </el-checkbox>
+            <template v-if="trendViewMode === 'cpk'">
+              <el-checkbox
+                v-if="!tab1SelectedArticle"
+                v-model="excludeTop10"
+                size="small"
+                style="margin-left: 10px; font-weight: 500;"
+                @change="handleExcludeTop10Change"
+              >
+                剔除 Top 10 预警规格
+              </el-checkbox>
 
-            <el-button
-              v-if="tab1SelectedArticle"
-              size="small"
-              :class="['exclude-outliers-btn', { 'is-active': excludeOutliers }]"
-              @click="excludeOutliers = !excludeOutliers; loadCpkTrend()"
-            >
-              <el-icon v-if="excludeOutliers" style="margin-right: 4px; font-weight: bold;"><Select /></el-icon>
-              <span>{{ excludeOutliers ? '已剔除异常值 (Q3+1.5IQR)' : '剔除异常值 (Q3+1.5IQR)' }}</span>
-            </el-button>
+              <el-button
+                v-if="tab1SelectedArticle"
+                size="small"
+                :class="['exclude-outliers-btn', { 'is-active': excludeOutliers }]"
+                @click="excludeOutliers = !excludeOutliers; loadCpkTrend()"
+              >
+                <el-icon v-if="excludeOutliers" style="margin-right: 4px; font-weight: bold;"><Select /></el-icon>
+                <span>{{ excludeOutliers ? '已剔除异常值 (Q3+1.5IQR)' : '剔除异常值 (Q3+1.5IQR)' }}</span>
+              </el-button>
+            </template>
           </div>
         </div>
         <div class="card-body" style="min-height:380px; height:380px;">
           <TrendChart
+            v-if="trendViewMode === 'cpk'"
+            :key="`cpk-${cpkIndicator}-${trendChartKey}`"
             :cpk-data="cpkData"
             :indicator="cpkIndicator"
             :loading="cpkLoading"
             :error="cpkError"
             :x-key="filterStore.trendGranularity === 'daily' ? 'date' : 'week_start'"
             :selected-date="selectedTrendDate"
+            @date-select="handleDateSelect"
+          />
+          <ProductionAnomalyTrendChart
+            v-else
+            :key="`anomaly-${trendChartKey}`"
+            :data="anomalyData"
+            :loading="anomalyLoading"
+            :error="anomalyError"
+            :selected-date="selectedTrendDate"
+            :alarm-modes="anomalyAlarmModes"
             @date-select="handleDateSelect"
           />
         </div>
@@ -381,6 +452,7 @@
       :indicator="cgrsDialogIndicator || cpkIndicator"
       :is-top-warning="cgrsIsTopWarning"
       :top-machines="cgrsTopMachines"
+      @open-recommend-dialog="handleSwitchToRecommend"
     />
 
     <!-- 机台排列组合树分析弹窗 -->
@@ -433,10 +505,12 @@
 
 <script setup>
 import { ref, watch, computed, onMounted, nextTick } from 'vue'
+import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useFilterStore } from '../store/filter.js'
 import { api } from '../api/index.js'
 import TrendChart from '../components/charts/TrendChart.vue'
+import ProductionAnomalyTrendChart from '../components/charts/ProductionAnomalyTrendChart.vue'
 import CoreSpecActionTable from '../components/tables/CoreSpecActionTable.vue'
 import MachineRecommendParamDialog from '../components/dialogs/MachineRecommendParamDialog.vue'
 import CgrsRecordDialog from '../components/dialogs/CgrsRecordDialog.vue'
@@ -446,16 +520,35 @@ import MachineCombinationTree from '../components/charts/MachineCombinationTree.
 import ArticleLotCpkChart from '../components/charts/ArticleLotCpkChart.vue'
 import BarcodeMeasurementsDialog from '../components/modals/BarcodeMeasurementsDialog.vue'
 
-import { QuestionFilled, RefreshLeft, ZoomIn, TrendCharts, Select } from '@element-plus/icons-vue'
+import { QuestionFilled, RefreshLeft, ZoomIn, TrendCharts, Select, BellFilled } from '@element-plus/icons-vue'
 import { useDashboardTour } from '../composables/useDashboardTour.js'
 
 const filterStore = useFilterStore()
-const { startTour } = useDashboardTour()
+const { startTour, advanceTourIfActive } = useDashboardTour()
+
+
+
+function handleTourInteraction(type) {
+  if (type === 'select-warning-date') {
+    const dates = cpkData.value?.dates || []
+    if (dates.length > 0) {
+      const targetDate = dates.find(d => d === '2026-08-25') || dates[12] || dates[Math.floor(dates.length * 0.40)] || dates[dates.length - 1]
+      handleDateSelect(targetDate)
+    }
+  } else if (type === 'select-spec-row') {
+    if (articles.value && articles.value.length > 0) {
+      const firstSpec = articles.value[0].article10
+      if (firstSpec) {
+        onTab1ArticleDrill(firstSpec)
+      }
+    }
+  }
+}
 
 onMounted(() => {
   // 首次访问自动唤醒新手引导 (延时 1000ms 等待图表与布局初次渲染完成)
   setTimeout(() => {
-    startTour(false)
+    startTour(false, handleTourInteraction)
   }, 1000)
 })
 
@@ -467,10 +560,29 @@ const recDialogStage = ref('gt')
 const recDialogReason = ref('degradation')
 
 function handleOpenTableRecommend(row) {
-  if (!row || !row.warning_machine) return
-  recDialogMachine.value = row.warning_machine
+  console.log('[Dashboard] handleOpenTableRecommend called with:', row)
+  const mach = row?.warning_machine || row?.machine || row?.workcenter
+  if (!mach) {
+    console.warn('[Dashboard] no warning_machine found in row:', row)
+    return
+  }
+  recDialogMachine.value = mach
   recDialogArticle.value = row.article10 || tab1SelectedArticle.value || ''
-  recDialogStage.value = row.recommend_stage || 'gt'
+  const mUpper = String(mach).toUpperCase()
+  const isCuring = mUpper.startsWith('CU') || mUpper.startsWith('CT')
+  recDialogStage.value = row.recommend_stage || (isCuring ? 'ct' : 'gt')
+  recDialogReason.value = 'degradation'
+  recDialogVisible.value = true
+}
+
+function handleSwitchToRecommend(payload) {
+  console.log('[Dashboard] Switching from CGRS dialog to Recommend dialog:', payload)
+  cgrsDialogVisible.value = false
+  recDialogMachine.value = payload.machine
+  recDialogArticle.value = payload.article || tab1SelectedArticle.value || ''
+  const mUpper = String(payload.machine || '').toUpperCase()
+  const isCuring = mUpper.startsWith('CU') || mUpper.startsWith('CT')
+  recDialogStage.value = payload.stage || (isCuring ? 'ct' : 'gt')
   recDialogReason.value = 'degradation'
   recDialogVisible.value = true
 }
@@ -519,6 +631,9 @@ watch(() => tab1SelectedArticle.value, (newVal) => {
 })
 
 
+// 趋势图视图模式: 'cpk' (CPK 波动图) | 'anomaly' (Yield 不良监控)
+const trendViewMode = ref('cpk')
+
 // CPK 趋势与指标状态
 const cpkIndicator = computed(() => filterStore.cpkIndicator)
 const selectedTrendDate = ref(null) // 点击选中日期
@@ -528,11 +643,20 @@ const cpkError = ref(null)
 const excludeTop10 = ref(false)
 const excludeOutliers = ref(false)
 
+// 全量生产异常趋势状态与日增长报警模式
+const anomalyData = ref([])
+const anomalyLoading = ref(false)
+const anomalyError = ref(null)
+const anomalyAlarmModes = ref(['consecutive', 'top5'])
+const lastLoadedCpkIndicator = ref(null)
+
 async function loadCpkTrend() {
+  const targetIndicator = cpkIndicator.value
   cpkLoading.value = true
   cpkError.value = null
   try {
     const params = {}
+    params.indicator = cpkIndicator.value
     params.grain = filterStore.trendGranularity
     params.time_col = filterStore.selectedTimeCol
     params.phase = filterStore.selectedPhase
@@ -568,12 +692,62 @@ async function loadCpkTrend() {
       }
     }
     const res = await api.getCpkTrend(params)
-    cpkData.value = res.data.status === 'success' ? res.data.data : {}
-    if (res.data.status === 'error') cpkError.value = res.data.message
+    if (res.data.status === 'success') {
+      cpkData.value = res.data.data || {}
+      lastLoadedCpkIndicator.value = targetIndicator
+    } else {
+      cpkData.value = {}
+      cpkError.value = res.data.message
+    }
   } catch (e) {
     cpkError.value = 'CPK 趋势数据加载异常'
   } finally {
     cpkLoading.value = false
+  }
+}
+
+async function loadAnomalyTrend() {
+  anomalyLoading.value = true
+  anomalyError.value = null
+  try {
+    const params = {
+      grain: filterStore.trendGranularity || 'daily',
+      time_col: filterStore.selectedTimeCol,
+      phase: filterStore.selectedPhase,
+      shift: filterStore.selectedShift
+    }
+    if (tab1SelectedArticle.value) {
+      params.article10 = tab1SelectedArticle.value
+    }
+    const res = await api.getTrendProductionAnomaly(params)
+    if (res.data && res.data.status === 'success') {
+      anomalyData.value = res.data.data || []
+      if (selectedTrendDate.value) {
+        applyTopProcessAndIndicatorLinkage(selectedTrendDate.value)
+      }
+    } else {
+      anomalyError.value = res.data?.message || '加载生产异常数据失败'
+    }
+  } catch (err) {
+    anomalyError.value = '生产异常数据请求异常'
+  } finally {
+    anomalyLoading.value = false
+  }
+}
+
+// 页面初次载入时静默预加载生产异常数据，确保点击日期能即时联动定位
+loadAnomalyTrend()
+
+function handleTrendViewModeChange(mode) {
+  trendViewMode.value = mode
+  if (mode === 'anomaly') {
+    if (!anomalyData.value || anomalyData.value.length === 0) {
+      loadAnomalyTrend()
+    }
+  } else if (mode === 'cpk') {
+    if (!cpkData.value.dates || cpkData.value.dates.length === 0 || lastLoadedCpkIndicator.value !== cpkIndicator.value) {
+      loadCpkTrend()
+    }
   }
 }
 
@@ -585,7 +759,11 @@ function handlePhaseChange(val) {
   if (val && filterStore.selectedPhase !== val) {
     filterStore.setSelectedPhase(val)
   }
-  loadCpkTrend()
+  if (trendViewMode.value === 'cpk') {
+    loadCpkTrend()
+  } else {
+    loadAnomalyTrend()
+  }
   if (selectedTrendDate.value) {
     loadWarningArticles()
   }
@@ -598,8 +776,17 @@ watch(
     () => filterStore.selectedTimeCol,
     () => filterStore.cpkIndicator
   ],
-  () => {
-    loadCpkTrend()
+  ([newPhase, newShift, newTimeCol, newInd], [oldPhase, oldShift, oldTimeCol, oldInd] = []) => {
+    if (newPhase !== oldPhase || newShift !== oldShift || newTimeCol !== oldTimeCol) {
+      if (trendViewMode.value === 'cpk') {
+        loadCpkTrend()
+      } else {
+        loadAnomalyTrend()
+      }
+    } else if (newInd !== oldInd) {
+      // 只要指标发生切换（无论是手动选择还是由 Yield 点击联动触发），立即拉取该指标的 CPK 趋势
+      loadCpkTrend()
+    }
     if (selectedTrendDate.value) {
       loadWarningArticles()
       loadMachineProcessSankey()
@@ -620,27 +807,116 @@ function onTab1ArticleDrill(article) {
     resetTab1Article()
   } else {
     tab1SelectedArticle.value = article
-    loadCpkTrend()
+    if (trendViewMode.value === 'cpk') {
+      loadCpkTrend()
+    } else {
+      loadAnomalyTrend()
+    }
     loadLotCpkTrend()
+    // 若当前正在新手引导第 2 步 (索引 1: 核心规格行动表)，点击规格钻取自动平滑进入第 3 步 (工序流转)
+    advanceTourIfActive(1)
   }
 }
 
 function resetTab1Article() {
   tab1SelectedArticle.value = null
-  loadCpkTrend()
+  if (trendViewMode.value === 'cpk') {
+    loadCpkTrend()
+  } else {
+    loadAnomalyTrend()
+  }
   loadLotCpkTrend()
 }
 
+const trendChartKey = ref(0)
+
+function resetOverallTrend() {
+  selectedTrendDate.value = null
+  tab1SelectedArticle.value = null
+  filterStore.selectedPhase = 'all'
+  trendChartKey.value++
+
+  if (trendViewMode.value === 'cpk') {
+    excludeTop10.value = false
+    excludeOutliers.value = false
+    loadCpkTrend()
+  } else {
+    loadAnomalyTrend()
+  }
+  loadLotCpkTrend()
+  ElMessage.success('已恢复总体趋势图')
+}
+
+
 const machineCpkDateRange = ref([])
+
+// 联动逻辑：悬浮卡片排行第一的工序及其增幅最大详细指标置顶与自动切换 (仅在 Yield 不良模式下生效)
+function applyTopProcessAndIndicatorLinkage(date) {
+  // CPK 波动视图下固定用户选中的指标，绝对不自动切换指标，只切换日期
+  if (trendViewMode.value === 'cpk') {
+    return
+  }
+
+  if (!date || !anomalyData.value || anomalyData.value.length === 0) {
+    filterStore.updateIndicatorPriority(null, null, null)
+    return
+  }
+
+  const item = anomalyData.value.find(d => d.date === date)
+  if (!item) return
+
+  // 1. 获取该天日环比增幅排行第一的工序 (与悬浮卡片 100% 一致)
+  let topProcess = item.top_process
+  if (!topProcess) {
+    const processItems = [
+      { name: 'TB', growth: item.tb_growth_rate, rate: item.tb_anomaly_rate },
+      { name: 'TU', growth: item.tu_growth_rate, rate: item.tu_anomaly_rate },
+      { name: 'TG', growth: item.tg_growth_rate, rate: item.tg_anomaly_rate }
+    ]
+    processItems.sort((a, b) => {
+      const gA = (a.growth !== null && a.growth !== undefined) ? a.growth : -99999
+      const gB = (b.growth !== null && b.growth !== undefined) ? b.growth : -99999
+      if (gA !== gB) return gB - gA
+      return (b.rate || 0) - (a.rate || 0)
+    })
+    topProcess = processItems[0]?.name
+  }
+
+  // 2. 更新 filterStore 中的指标分组置顶及详细指标增幅降序列表
+  filterStore.updateIndicatorPriority(topProcess, item.detail_indicators, date)
+
+  // 3. 统计该工序下日异常增幅最大的详细指标，并自动优先选中 (仅在 Yield 不良模式下)
+  const topIndicator = item.top_indicator || item.detail_indicators?.[topProcess]?.[0]?.key
+  if (topIndicator && filterStore.cpkIndicator !== topIndicator) {
+    filterStore.setCpkIndicator(topIndicator)
+  }
+}
 
 function handleDateSelect(date) {
   selectedTrendDate.value = date
+  // 零延迟瞬间推进新手引导至步骤 2
+  advanceTourIfActive(0)
   
   if (date) {
     const dObj = new Date(date)
     const dStart = new Date(dObj.getTime() - 7 * 24 * 60 * 60 * 1000)
     const fmt = (d) => d.toISOString().split('T')[0]
     machineCpkDateRange.value = [fmt(dStart), date]
+  }
+
+  // 仅在 Yield 不良视图下才执行工序与最大增幅详细指标联动自动切换；
+  // 当在 CPK 这一页选择日期、或切回 CPK 页面切换日期时，固定当前指标，绝不自动切换指标，只切换日期
+  if (trendViewMode.value !== 'cpk') {
+    const hasPrevNext = anomalyData.value?.[0]?.detail_indicators && 
+      Object.values(anomalyData.value[0].detail_indicators)?.[0]?.[0]?.prev_date !== undefined
+
+    if (anomalyData.value && anomalyData.value.length > 0 && hasPrevNext) {
+      applyTopProcessAndIndicatorLinkage(date)
+    } else {
+      loadAnomalyTrend().then(() => {
+        applyTopProcessAndIndicatorLinkage(date)
+      })
+    }
   }
 
   loadWarningArticles().then(() => {
@@ -1289,4 +1565,44 @@ onMounted(async () => {
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35) !important;
   transform: translateY(-1px);
 }
+
+/* ── 整体指标预览 Tab 切换控件 (现代极简 Segmented Control) ── */
+.trend-mode-switch {
+  margin-left: 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 2px;
+  border-radius: 8px;
+  display: inline-flex;
+}
+
+.trend-mode-switch :deep(.el-radio-button) {
+  border: none !important;
+}
+
+.trend-mode-switch :deep(.el-radio-button__inner) {
+  border-radius: 6px !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 5px 14px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #64748b !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  user-select: none !important;
+}
+
+.trend-mode-switch :deep(.el-radio-button__inner:hover) {
+  color: #0f172a !important;
+}
+
+.trend-mode-switch :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
 </style>
+

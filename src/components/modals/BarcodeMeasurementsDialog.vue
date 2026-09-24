@@ -22,12 +22,31 @@
 
       <div class="header-indicator-switch">
         <span style="font-size: 12px; color: var(--el-text-color-regular); margin-right: 8px;">切换分析指标:</span>
-        <el-radio-group v-model="currentIndicator" size="small" @change="loadData">
-          <el-radio-button label="rfpp">RFPP 峰峰值</el-radio-button>
-          <el-radio-button label="rfh1">RFH1 一次谐波</el-radio-button>
-          <el-radio-button label="cony">CONY 锥度</el-radio-button>
-          <el-radio-button label="weight">胎重 (偏差/实测)</el-radio-button>
-        </el-radio-group>
+        <el-select v-model="currentIndicator" size="small" style="width: 130px;" @change="loadData">
+          <el-option-group label="TU">
+            <el-option label="RFPP" value="rfpp" />
+            <el-option label="RFH1" value="rfh1" />
+            <el-option label="RFH2" value="rfh2" />
+            <el-option label="LFPP" value="lfpp" />
+            <el-option label="LFH1" value="lfh1" />
+            <el-option label="CONY" value="cony" />
+            <el-option label="PLYS" value="plys" />
+          </el-option-group>
+          <el-option-group label="TG">
+            <el-option label="TBUL" value="tbul" />
+            <el-option label="BBUL" value="bbul" />
+            <el-option label="TDEP" value="tdep" />
+            <el-option label="BDEP" value="bdep" />
+            <el-option label="TLRO" value="tlro" />
+            <el-option label="BLRO" value="blro" />
+            <el-option label="CRRO" value="crro" />
+          </el-option-group>
+          <el-option-group label="TB">
+            <el-option label="TBALW" value="tbalw" />
+            <el-option label="BBALW" value="bbalw" />
+            <el-option label="SBALW" value="sbalw" />
+          </el-option-group>
+        </el-select>
       </div>
     </div>
 

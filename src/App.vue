@@ -110,32 +110,74 @@
               v-model="filterStore.cpkIndicator"
               size="small"
               class="header-nav-select indicator-select"
-              popper-class="header-select-popper"
+              popper-class="header-select-popper indicator-select-popper"
               placeholder="选择指标"
             >
-              <el-option label="RFPP CPK" value="rfpp" />
-              <el-option label="RFH1 CPK" value="rfh1" />
-              <el-option label="CONY" value="cony" />
-              <el-option label="胎重 Diff" value="weight" />
+              <el-option-group
+                v-for="grp in filterStore.indicatorGroups"
+                :key="grp.group"
+                :label="grp.label"
+              >
+                <el-option
+                  v-for="opt in grp.options"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                >
+                  <el-tooltip
+                    placement="right"
+                    :show-after="120"
+                    :hide-after="50"
+                    popper-class="indicator-day-tooltip-popper"
+                    :disabled="opt.count === undefined || opt.count === null"
+                  >
+                    <template #content>
+                      <div class="ind-tip-box">
+                        <div class="ind-tip-header">
+                          <span class="ind-tip-title">{{ opt.label }} 异常数对比</span>
+                          <span class="ind-tip-date">{{ opt.currDate || '' }}</span>
+                        </div>
+                        <div class="ind-tip-divider"></div>
+                        <div class="ind-tip-list">
+                          <div class="ind-tip-row">
+                            <span class="ind-tip-label">前一日 {{ opt.prevDate ? `(${formatShortDate(opt.prevDate)})` : '(无前日)' }}</span>
+                            <span class="ind-tip-val">
+                              {{ opt.prevCount !== null && opt.prevCount !== undefined ? opt.prevCount + ' 胎' : '-' }}
+                            </span>
+                          </div>
+                          <div class="ind-tip-row current">
+                            <span class="ind-tip-label">当　日 {{ opt.currDate ? `(${formatShortDate(opt.currDate)})` : '' }}</span>
+                            <span class="ind-tip-val highlight">
+                              {{ opt.count !== null && opt.count !== undefined ? opt.count + ' 胎' : '-' }}
+                              <span v-if="opt.growthText && opt.growthText !== '-'" :class="['ind-tip-badge', opt.growthClass]">
+                                {{ opt.growthText }}
+                              </span>
+                            </span>
+                          </div>
+                          <div class="ind-tip-row">
+                            <span class="ind-tip-label">后一日 {{ opt.nextDate ? `(${formatShortDate(opt.nextDate)})` : '(无次日)' }}</span>
+                            <span class="ind-tip-val">
+                              {{ opt.nextCount !== null && opt.nextCount !== undefined ? opt.nextCount + ' 胎' : '-' }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <div class="indicator-option-row">
+                      <span class="indicator-opt-name" :class="{ 'is-max': opt.isMax }">
+                        {{ opt.label }}
+                      </span>
+                      <span
+                        v-if="opt.growthText && opt.growthText !== '-'"
+                        :class="['indicator-opt-growth', opt.growthClass, { 'is-max-growth': opt.isMax }]"
+                      >
+                        {{ opt.growthText }}
+                      </span>
+                    </div>
+                  </el-tooltip>
+                </el-option>
+              </el-option-group>
             </el-select>
-          </div>
-
-          <!-- 胎重公差限调节器 (仅胎重模式) -->
-          <div v-if="filterStore.cpkIndicator === 'weight'" class="nav-control-group stripe-pill">
-            <div class="nav-label-badge">
-              <el-icon class="nav-badge-icon"><Operation /></el-icon>
-              <span class="nav-control-label">公差限</span>
-            </div>
-            <el-input-number
-              v-model="filterStore.weightTolerance"
-              :precision="2"
-              :step="0.05"
-              :min="0.05"
-              :max="5.0"
-              size="small"
-              class="header-nav-input-num"
-            />
-            <span class="nav-unit-label">%</span>
           </div>
         </div>
 
@@ -179,6 +221,12 @@ const { startTour } = useDashboardTour()
 
 function handleStartTour() {
   startTour(true)
+}
+
+function formatShortDate(d) {
+  if (!d) return '-'
+  const parts = String(d).split('-')
+  return parts.length >= 3 ? `${parts[1]}-${parts[2]}` : d
 }
 
 const apiOk = ref(false)
@@ -344,7 +392,7 @@ onUnmounted(() => {
 }
 
 .indicator-select {
-  width: 98px;
+  width: 104px;
 }
 
 /* 嵌入式 InputNumber 尺寸与单位 */

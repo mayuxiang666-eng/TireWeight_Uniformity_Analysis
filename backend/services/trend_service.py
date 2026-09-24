@@ -8,6 +8,7 @@ import numpy as np
 import traceback
 
 from backend.core.db import qry
+from backend.core.cpk import INDICATORS_SPEC
 from backend.core.time_utils import build_production_time_where, get_phase_sql_condition
 
 
@@ -56,6 +57,7 @@ get_date_range = get_filter_daterange
 
 def get_trend_cpk(
     grain: str = "daily",     # "daily" | "hourly" | "minute" | "weekly"
+    indicator: str = "rfpp",
     article10: Optional[str] = None,
     exclude_articles: Optional[str] = None, # 英文逗号分割的需剔除规格代码列表
     time_col: Optional[str] = "tu_first_loc_timestamp",
@@ -63,16 +65,29 @@ def get_trend_cpk(
     shift: Optional[str] = "all",
     exclude_outliers: bool = False
 ) -> dict:
-    """获取宏观 CPK 趋势统计数据 (支持多时间粒度、全厂加权与单规格池化、三班与期别过滤)"""
+    """获取宏观 CPK 趋势统计数据 (支持 17 项指标全量计算、多时间粒度、全厂加权与单规格池化、三班与期别过滤)"""
     try:
+        if not isinstance(indicator, str) or not indicator:
+            indicator = "rfpp"
+        indicator = indicator.lower().strip()
         if not isinstance(exclude_articles, str):
             exclude_articles = None
         if not isinstance(article10, str):
             article10 = None
-        if not isinstance(time_col, str):
+        if not isinstance(time_col, str) or not time_col:
             time_col = "tu_first_loc_timestamp"
         if not isinstance(phase, str):
             phase = "all"
+
+        # 获取当前指标元数据
+        spec = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+        col_name = spec["col"]
+        usl_col = spec.get("usl_col")
+        lsl_col = spec.get("lsl_col")
+        scale = spec.get("scale", 1.0)
+        is_double = spec.get("is_double", False)
+        ind_label = spec.get("label", indicator.upper())
+        unit = spec.get("unit", "")
 
         # Select time expression
         col_ref = time_col if time_col else "tu_first_loc_timestamp"
@@ -100,234 +115,252 @@ def get_trend_cpk(
         time_null_clause = f"AND {build_production_time_where(col_ref, shift=shift)}"
         phase_cond = get_phase_sql_condition(phase)
 
-        cond_rfpp = "AND b.v_rfpp <= q.up_rfpp" if exclude_outliers else ""
-        cond_rfh1 = "AND b.v_rfh1 <= q.up_rfh1" if exclude_outliers else ""
-        cond_cony = "AND b.v_cony <= q.up_cony" if exclude_outliers else ""
-        cond_weight = "AND b.v_weight <= q.up_weight" if exclude_outliers else ""
-
-        if article10:
-            # 单规格：池化计算，直接计算均值与标准差，不区分 group，不加权；使用 CTE 计算上四分位界线异常值条数
-            sql = f"""
-                WITH base_filtered AS (
-                    SELECT
-                        {time_expr} AS time_period,
-                        article10,
-                        TRY_CAST(rfppwc_first AS DOUBLE) AS v_rfpp,
-                        TRY_CAST(rfh1wc_first AS DOUBLE) AS v_rfh1,
-                        TRY_CAST(cony_first AS DOUBLE) AS v_cony,
-                        CASE WHEN tire_weight_actual_first IS NOT NULL AND TRY_CAST(tire_weight_actual_first AS DOUBLE) > 0.0 AND tire_weight_target_first IS NOT NULL AND TRY_CAST(tire_weight_target_first AS DOUBLE) > 0.0 THEN ((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0) ELSE NULL END AS v_weight,
-                        tire_weight_actual_first,
-                        tire_weight_target_first,
-                        conny_usl,
-                        conny_lsl,
-                        standard_rfpp,
-                        standard_rfh1,
-                        "group"
-                    FROM clean_yield
-                    WHERE "group" IS NOT NULL AND "group" != 'None' AND "group" != ''
-                      {time_null_clause}
-                      {phase_cond}
-                      AND article10 = ?
-                ),
-                q_bounds AS (
-                    SELECT
-                        time_period,
-                        (2.5 * QUANTILE_CONT(v_rfpp, 0.75) - 1.5 * QUANTILE_CONT(v_rfpp, 0.25)) AS up_rfpp,
-                        (2.5 * QUANTILE_CONT(v_rfh1, 0.75) - 1.5 * QUANTILE_CONT(v_rfh1, 0.25)) AS up_rfh1,
-                        (2.5 * QUANTILE_CONT(v_cony, 0.75) - 1.5 * QUANTILE_CONT(v_cony, 0.25)) AS up_cony,
-                        (2.5 * QUANTILE_CONT(v_weight, 0.75) - 1.5 * QUANTILE_CONT(v_weight, 0.25)) AS up_weight
-                    FROM base_filtered
-                    GROUP BY 1
-                ),
-                spec_daily_stats AS (
-                    SELECT
-                        b.time_period,
-                        b.article10,
-                        COUNT(CASE WHEN 1=1 {cond_rfpp} THEN 1 END) AS sample_size,
-                        AVG(CASE WHEN 1=1 {cond_rfpp} THEN b.v_rfpp END) AS avg_rfpp,
-                        STDDEV(CASE WHEN 1=1 {cond_rfpp} THEN b.v_rfpp END) AS std_rfpp,
-                        SUM(CASE WHEN b.v_rfpp > q.up_rfpp THEN 1 ELSE 0 END) AS outliers_rfpp,
-                        AVG(CASE WHEN 1=1 {cond_rfh1} THEN b.v_rfh1 END) AS avg_rfh1,
-                        STDDEV(CASE WHEN 1=1 {cond_rfh1} THEN b.v_rfh1 END) AS std_rfh1,
-                        SUM(CASE WHEN b.v_rfh1 > q.up_rfh1 THEN 1 ELSE 0 END) AS outliers_rfh1,
-                        AVG(CASE WHEN 1=1 {cond_cony} THEN b.v_cony END) AS avg_cony,
-                        STDDEV(CASE WHEN 1=1 {cond_cony} THEN b.v_cony END) AS std_cony,
-                        SUM(CASE WHEN b.v_cony > q.up_cony THEN 1 ELSE 0 END) AS outliers_cony,
-                        COALESCE(ANY_VALUE(b.conny_usl), 95.0) AS usl_cony,
-                        COALESCE(ANY_VALUE(b.conny_lsl), -95.0) AS lsl_cony,
-                        SUM(CASE WHEN 1=1 {cond_weight} AND b.tire_weight_actual_first IS NOT NULL AND TRY_CAST(b.tire_weight_actual_first AS DOUBLE) > 0.0 AND b.tire_weight_target_first IS NOT NULL AND TRY_CAST(b.tire_weight_target_first AS DOUBLE) > 0.0 THEN TRY_CAST(b.tire_weight_actual_first AS DOUBLE) ELSE NULL END) as sum_act_w,
-                        SUM(CASE WHEN 1=1 {cond_weight} AND b.tire_weight_actual_first IS NOT NULL AND TRY_CAST(b.tire_weight_actual_first AS DOUBLE) > 0.0 AND b.tire_weight_target_first IS NOT NULL AND TRY_CAST(b.tire_weight_target_first AS DOUBLE) > 0.0 THEN TRY_CAST(b.tire_weight_target_first AS DOUBLE) ELSE NULL END) as sum_tar_w,
-                        STDDEV(CASE WHEN 1=1 {cond_weight} THEN b.v_weight END) AS std_w,
-                        SUM(CASE WHEN b.v_weight > q.up_weight THEN 1 ELSE 0 END) AS outliers_weight,
-                        COALESCE(ANY_VALUE(b.standard_rfpp), 
-                                 CASE ANY_VALUE(b."group") 
-                                     WHEN 'GROUP 1'  THEN 10.5 
-                                     WHEN 'GROUP 2A' THEN 11.5 
-                                     WHEN 'GROUP 2B' THEN 12.5 
-                                     WHEN 'GROUP 3'  THEN 12.5 
-                                 END) * 10.0 AS usl_rfpp,
-                        COALESCE(ANY_VALUE(b.standard_rfh1), 
-                                 CASE ANY_VALUE(b."group") 
-                                     WHEN 'GROUP 1'  THEN 7.5 
-                                     WHEN 'GROUP 2A' THEN 8.5 
-                                     WHEN 'GROUP 2B' THEN 9.0 
-                                     WHEN 'GROUP 3'  THEN 9.5 
-                                 END) * 10.0 AS usl_rfh1
-                    FROM base_filtered b
-                    JOIN q_bounds q ON b.time_period = q.time_period
-                    GROUP BY 1, 2
-                    HAVING COUNT(*) >= 10
-                )
-                SELECT
-                    time_period,
-                    sample_size AS total_n,
-                    CASE WHEN std_rfpp > 1e-6 THEN (usl_rfpp - avg_rfpp) / (3.0 * std_rfpp) ELSE NULL END AS weighted_cpk_rfpp,
-                    avg_rfpp AS weighted_avg_rfpp,
-                    std_rfpp AS weighted_std_rfpp,
-                    outliers_rfpp,
-                    CASE WHEN std_rfh1 > 1e-6 THEN (usl_rfh1 - avg_rfh1) / (3.0 * std_rfh1) ELSE NULL END AS weighted_cpk_rfh1,
-                    avg_rfh1 AS weighted_avg_rfh1,
-                    std_rfh1 AS weighted_std_rfh1,
-                    outliers_rfh1,
-                    CASE WHEN std_cony > 1e-6 THEN LEAST((usl_cony - avg_cony) / (3.0 * std_cony), (avg_cony - lsl_cony) / (3.0 * std_cony)) ELSE NULL END AS weighted_cpk_cony,
-                    avg_cony AS weighted_avg_cony,
-                    std_cony AS weighted_std_cony,
-                    outliers_cony,
-                    (sum_act_w - sum_tar_w) / NULLIF(sum_tar_w, 0.0) * 100.0 as weighted_diff_weight,
-                    std_w AS weighted_std_weight,
-                    outliers_weight
-                FROM spec_daily_stats
-                ORDER BY 1
-            """
-            params = [article10]
-        else:
-            # 全厂综合：各规格按生产组别计算独立 CPK，然后通过日产量加权平均；基于全厂样本计算当天的 IQR 异常值
-            sql = f"""
-                WITH base_filtered AS (
-                    SELECT
-                        {time_expr} AS time_period,
-                        "group",
-                        article10,
-                        TRY_CAST(rfppwc_first AS DOUBLE) AS v_rfpp,
-                        TRY_CAST(rfh1wc_first AS DOUBLE) AS v_rfh1,
-                        TRY_CAST(cony_first AS DOUBLE) AS v_cony,
-                        CASE WHEN tire_weight_actual_first IS NOT NULL AND TRY_CAST(tire_weight_actual_first AS DOUBLE) > 0.0 AND tire_weight_target_first IS NOT NULL AND TRY_CAST(tire_weight_target_first AS DOUBLE) > 0.0 THEN ((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0) ELSE NULL END AS v_weight,
-                        tire_weight_actual_first,
-                        tire_weight_target_first,
-                        conny_usl,
-                        conny_lsl,
-                        standard_rfpp,
-                        standard_rfh1
-                    FROM clean_yield
-                    WHERE "group" IS NOT NULL AND "group" != 'None' AND "group" != ''
-                      {time_null_clause}
-                      {phase_cond}
-                      {exclude_clause}
-                ),
-                q_bounds AS (
+        if indicator == "weight":
+            # 胎重指标维持均值偏差率计算逻辑
+            cond_weight = "AND b.v_weight <= q.up_weight" if exclude_outliers else ""
+            if article10:
+                sql = f"""
+                    WITH base_filtered AS (
+                        SELECT
+                            {time_expr} AS time_period,
+                            article10,
+                            CASE WHEN tire_weight_actual_first IS NOT NULL AND TRY_CAST(tire_weight_actual_first AS DOUBLE) > 0.0 AND tire_weight_target_first IS NOT NULL AND TRY_CAST(tire_weight_target_first AS DOUBLE) > 0.0 THEN ((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0) ELSE NULL END AS v_weight,
+                            TRY_CAST(tire_weight_actual_first AS DOUBLE) as act_w,
+                            TRY_CAST(tire_weight_target_first AS DOUBLE) as tar_w
+                        FROM clean_yield
+                        WHERE article10 = ?
+                          {time_null_clause}
+                          {phase_cond}
+                    ),
+                    q_bounds AS (
+                        SELECT
+                            time_period,
+                            (2.5 * QUANTILE_CONT(v_weight, 0.75) - 1.5 * QUANTILE_CONT(v_weight, 0.25)) AS up_weight
+                        FROM base_filtered
+                        GROUP BY 1
+                    ),
+                    spec_daily_stats AS (
+                        SELECT
+                            b.time_period,
+                            b.article10,
+                            COUNT(CASE WHEN 1=1 {cond_weight} THEN 1 END) AS sample_size,
+                            SUM(CASE WHEN 1=1 {cond_weight} THEN b.act_w ELSE NULL END) as sum_act_w,
+                            SUM(CASE WHEN 1=1 {cond_weight} THEN b.tar_w ELSE NULL END) as sum_tar_w,
+                            STDDEV(CASE WHEN 1=1 {cond_weight} THEN b.v_weight END) AS std_w,
+                            SUM(CASE WHEN b.v_weight > q.up_weight THEN 1 ELSE 0 END) AS outliers_weight
+                        FROM base_filtered b
+                        JOIN q_bounds q ON b.time_period = q.time_period
+                        GROUP BY 1, 2
+                        HAVING COUNT(*) >= 5
+                    )
                     SELECT
                         time_period,
-                        (2.5 * QUANTILE_CONT(v_rfpp, 0.75) - 1.5 * QUANTILE_CONT(v_rfpp, 0.25)) AS up_rfpp,
-                        (2.5 * QUANTILE_CONT(v_rfh1, 0.75) - 1.5 * QUANTILE_CONT(v_rfh1, 0.25)) AS up_rfh1,
-                        (2.5 * QUANTILE_CONT(v_cony, 0.75) - 1.5 * QUANTILE_CONT(v_cony, 0.25)) AS up_cony,
-                        (2.5 * QUANTILE_CONT(v_weight, 0.75) - 1.5 * QUANTILE_CONT(v_weight, 0.25)) AS up_weight
-                    FROM base_filtered
-                    GROUP BY 1
-                ),
-                spec_daily_stats AS (
-                    SELECT
-                        b.time_period,
-                        b."group",
-                        b.article10,
-                        COUNT(CASE WHEN 1=1 {cond_rfpp} THEN 1 END) AS sample_size,
-                        AVG(CASE WHEN 1=1 {cond_rfpp} THEN b.v_rfpp END) AS avg_rfpp,
-                        STDDEV(CASE WHEN 1=1 {cond_rfpp} THEN b.v_rfpp END) AS std_rfpp,
-                        SUM(CASE WHEN b.v_rfpp > q.up_rfpp THEN 1 ELSE 0 END) AS outliers_rfpp,
-                        AVG(CASE WHEN 1=1 {cond_rfh1} THEN b.v_rfh1 END) AS avg_rfh1,
-                        STDDEV(CASE WHEN 1=1 {cond_rfh1} THEN b.v_rfh1 END) AS std_rfh1,
-                        SUM(CASE WHEN b.v_rfh1 > q.up_rfh1 THEN 1 ELSE 0 END) AS outliers_rfh1,
-                        AVG(CASE WHEN 1=1 {cond_cony} THEN b.v_cony END) AS avg_cony,
-                        STDDEV(CASE WHEN 1=1 {cond_cony} THEN b.v_cony END) AS std_cony,
-                        SUM(CASE WHEN b.v_cony > q.up_cony THEN 1 ELSE 0 END) AS outliers_cony,
-                        COALESCE(ANY_VALUE(b.conny_usl), 95.0) AS usl_cony,
-                        COALESCE(ANY_VALUE(b.conny_lsl), -95.0) AS lsl_cony,
-                        SUM(CASE WHEN 1=1 {cond_weight} AND b.tire_weight_actual_first IS NOT NULL AND TRY_CAST(b.tire_weight_actual_first AS DOUBLE) > 0.0 AND b.tire_weight_target_first IS NOT NULL AND TRY_CAST(b.tire_weight_target_first AS DOUBLE) > 0.0 THEN TRY_CAST(b.tire_weight_actual_first AS DOUBLE) ELSE NULL END) as sum_act_w,
-                        SUM(CASE WHEN 1=1 {cond_weight} AND b.tire_weight_actual_first IS NOT NULL AND TRY_CAST(b.tire_weight_actual_first AS DOUBLE) > 0.0 AND b.tire_weight_target_first IS NOT NULL AND TRY_CAST(b.tire_weight_target_first AS DOUBLE) > 0.0 THEN TRY_CAST(b.tire_weight_target_first AS DOUBLE) ELSE NULL END) as sum_tar_w,
-                        STDDEV(CASE WHEN 1=1 {cond_weight} THEN b.v_weight END) AS std_w,
-                        SUM(CASE WHEN b.v_weight > q.up_weight THEN 1 ELSE 0 END) AS outliers_weight,
-                        COALESCE(ANY_VALUE(b.standard_rfpp), 
-                                 CASE b."group" 
-                                     WHEN 'GROUP 1'  THEN 10.5 
-                                     WHEN 'GROUP 2A' THEN 11.5 
-                                     WHEN 'GROUP 2B' THEN 12.5 
-                                     WHEN 'GROUP 3'  THEN 12.5 
-                                 END) * 10.0 AS usl_rfpp,
-                        COALESCE(ANY_VALUE(b.standard_rfh1), 
-                                 CASE b."group" 
-                                     WHEN 'GROUP 1'  THEN 7.5 
-                                     WHEN 'GROUP 2A' THEN 8.5 
-                                     WHEN 'GROUP 2B' THEN 9.0 
-                                     WHEN 'GROUP 3'  THEN 9.5 
-                                 END) * 10.0 AS usl_rfh1
-                    FROM base_filtered b
-                    JOIN q_bounds q ON b.time_period = q.time_period
-                    GROUP BY 1, 2, 3
-                    HAVING COUNT(*) >= 10
-                ),
-                spec_cpk AS (
-                    SELECT
-                        time_period,
-                        sample_size,
-                        CASE WHEN std_rfpp > 1e-6 THEN (usl_rfpp - avg_rfpp) / (3.0 * std_rfpp) ELSE NULL END AS cpk_rfpp,
-                        avg_rfpp,
-                        std_rfpp,
-                        outliers_rfpp,
-                        CASE WHEN std_rfh1 > 1e-6 THEN (usl_rfh1 - avg_rfh1) / (3.0 * std_rfh1) ELSE NULL END AS cpk_rfh1,
-                        avg_rfh1,
-                        std_rfh1,
-                        outliers_rfh1,
-                        CASE WHEN std_cony > 1e-6 THEN LEAST((usl_cony - avg_cony) / (3.0 * std_cony), (avg_cony - lsl_cony) / (3.0 * std_cony)) ELSE NULL END AS cpk_cony,
-                        avg_cony,
-                        std_cony,
-                        outliers_cony,
-                        sum_act_w,
-                        sum_tar_w,
-                        std_w,
-                        outliers_weight
+                        sample_size AS total_n,
+                        (sum_act_w - sum_tar_w) / NULLIF(sum_tar_w, 0.0) * 100.0 as weighted_cpk,
+                        (sum_act_w - sum_tar_w) / NULLIF(sum_tar_w, 0.0) * 100.0 as weighted_avg,
+                        std_w AS weighted_std,
+                        outliers_weight AS total_outliers
                     FROM spec_daily_stats
-                )
-                SELECT
-                    time_period,
-                    SUM(sample_size) AS total_n,
-                    SUM(cpk_rfpp * sample_size) / NULLIF(SUM(CASE WHEN cpk_rfpp IS NOT NULL THEN sample_size ELSE 0 END), 0) AS weighted_cpk_rfpp,
-                    SUM(avg_rfpp * sample_size) / NULLIF(SUM(CASE WHEN avg_rfpp IS NOT NULL THEN sample_size ELSE 0 END), 0) AS weighted_avg_rfpp,
-                    SQRT(SUM(POWER(COALESCE(std_rfpp, 0), 2) * sample_size) / NULLIF(SUM(CASE WHEN std_rfpp IS NOT NULL THEN sample_size ELSE 0 END), 0)) AS weighted_std_rfpp,
-                    SUM(outliers_rfpp) AS outliers_rfpp,
-                    SUM(cpk_rfh1 * sample_size) / NULLIF(SUM(CASE WHEN cpk_rfh1 IS NOT NULL THEN sample_size ELSE 0 END), 0) AS weighted_cpk_rfh1,
-                    SUM(avg_rfh1 * sample_size) / NULLIF(SUM(CASE WHEN avg_rfh1 IS NOT NULL THEN sample_size ELSE 0 END), 0) AS weighted_avg_rfh1,
-                    SQRT(SUM(POWER(COALESCE(std_rfh1, 0), 2) * sample_size) / NULLIF(SUM(CASE WHEN std_rfh1 IS NOT NULL THEN sample_size ELSE 0 END), 0)) AS weighted_std_rfh1,
-                    SUM(outliers_rfh1) AS outliers_rfh1,
-                    SUM(cpk_cony * sample_size) / NULLIF(SUM(CASE WHEN cpk_cony IS NOT NULL THEN sample_size ELSE 0 END), 0) AS weighted_cpk_cony,
-                    SUM(avg_cony * sample_size) / SUM(sample_size) AS weighted_avg_cony,
-                    SQRT(SUM(POWER(COALESCE(std_cony, 0), 2) * sample_size) / NULLIF(SUM(CASE WHEN std_cony IS NOT NULL THEN sample_size ELSE 0 END), 0)) AS weighted_std_cony,
-                    SUM(outliers_cony) AS outliers_cony,
-                    (SUM(sum_act_w) - SUM(sum_tar_w)) / NULLIF(SUM(sum_tar_w), 0.0) * 100.0 as weighted_diff_weight,
-                    SQRT(SUM(POWER(COALESCE(std_w, 0), 2) * sample_size) / NULLIF(SUM(CASE WHEN std_w IS NOT NULL THEN sample_size ELSE 0 END), 0)) AS weighted_std_weight,
-                    SUM(outliers_weight) AS outliers_weight
-                FROM spec_cpk
-                GROUP BY 1
-                ORDER BY 1
-            """
-            params = exclude_params
+                    ORDER BY 1
+                """
+                params = [article10]
+            else:
+                sql = f"""
+                    WITH base_filtered AS (
+                        SELECT
+                            {time_expr} AS time_period,
+                            article10,
+                            CASE WHEN tire_weight_actual_first IS NOT NULL AND TRY_CAST(tire_weight_actual_first AS DOUBLE) > 0.0 AND tire_weight_target_first IS NOT NULL AND TRY_CAST(tire_weight_target_first AS DOUBLE) > 0.0 THEN ((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0) ELSE NULL END AS v_weight,
+                            TRY_CAST(tire_weight_actual_first AS DOUBLE) as act_w,
+                            TRY_CAST(tire_weight_target_first AS DOUBLE) as tar_w
+                        FROM clean_yield
+                        WHERE article10 IS NOT NULL AND article10 != ''
+                          {time_null_clause}
+                          {phase_cond}
+                          {exclude_clause}
+                    ),
+                    q_bounds AS (
+                        SELECT
+                            time_period,
+                            (2.5 * QUANTILE_CONT(v_weight, 0.75) - 1.5 * QUANTILE_CONT(v_weight, 0.25)) AS up_weight
+                        FROM base_filtered
+                        GROUP BY 1
+                    ),
+                    spec_daily_stats AS (
+                        SELECT
+                            b.time_period,
+                            b.article10,
+                            COUNT(CASE WHEN 1=1 {cond_weight} THEN 1 END) AS sample_size,
+                            SUM(CASE WHEN 1=1 {cond_weight} THEN b.act_w ELSE NULL END) as sum_act_w,
+                            SUM(CASE WHEN 1=1 {cond_weight} THEN b.tar_w ELSE NULL END) as sum_tar_w,
+                            STDDEV(CASE WHEN 1=1 {cond_weight} THEN b.v_weight END) AS std_w,
+                            SUM(CASE WHEN b.v_weight > q.up_weight THEN 1 ELSE 0 END) AS outliers_weight
+                        FROM base_filtered b
+                        JOIN q_bounds q ON b.time_period = q.time_period
+                        GROUP BY 1, 2
+                        HAVING COUNT(*) >= 5
+                    )
+                    SELECT
+                        time_period,
+                        SUM(sample_size) AS total_n,
+                        (SUM(sum_act_w) - SUM(sum_tar_w)) / NULLIF(SUM(sum_tar_w), 0.0) * 100.0 as weighted_cpk,
+                        (SUM(sum_act_w) - SUM(sum_tar_w)) / NULLIF(SUM(sum_tar_w), 0.0) * 100.0 as weighted_avg,
+                        SQRT(SUM(POWER(COALESCE(std_w, 0), 2) * sample_size) / NULLIF(SUM(CASE WHEN std_w IS NOT NULL THEN sample_size ELSE 0 END), 0)) AS weighted_std,
+                        SUM(outliers_weight) AS total_outliers
+                    FROM spec_daily_stats
+                    GROUP BY 1
+                    ORDER BY 1
+                """
+                params = exclude_params
+        else:
+            # 17 项工序指标通用加权 CPK 计算
+            v_expr = f"TRY_CAST({col_name} AS DOUBLE)"
+            usl_expr = f"TRY_CAST({usl_col} AS DOUBLE) * {scale}" if usl_col else "NULL::DOUBLE"
+            lsl_expr = f"TRY_CAST({lsl_col} AS DOUBLE) * {scale}" if (is_double and lsl_col) else "NULL::DOUBLE"
+            cond_outliers = "AND b.v_measure <= q.up_measure" if exclude_outliers else ""
+
+            if article10:
+                sql = f"""
+                    WITH base_filtered AS (
+                        SELECT
+                            {time_expr} AS time_period,
+                            article10,
+                            {v_expr} AS v_measure,
+                            {usl_expr} AS usl_val,
+                            {lsl_expr} AS lsl_val
+                        FROM clean_yield
+                        WHERE article10 = ?
+                          AND {col_name} IS NOT NULL
+                          {time_null_clause}
+                          {phase_cond}
+                    ),
+                    q_bounds AS (
+                        SELECT
+                            time_period,
+                            (2.5 * QUANTILE_CONT(v_measure, 0.75) - 1.5 * QUANTILE_CONT(v_measure, 0.25)) AS up_measure
+                        FROM base_filtered
+                        GROUP BY 1
+                    ),
+                    spec_daily_stats AS (
+                        SELECT
+                            b.time_period,
+                            b.article10,
+                            COUNT(CASE WHEN 1=1 {cond_outliers} THEN 1 END) AS sample_size,
+                            AVG(CASE WHEN 1=1 {cond_outliers} THEN b.v_measure END) AS avg_v,
+                            STDDEV(CASE WHEN 1=1 {cond_outliers} THEN b.v_measure END) AS std_v,
+                            SUM(CASE WHEN b.v_measure > q.up_measure THEN 1 ELSE 0 END) AS outliers_count,
+                            ANY_VALUE(b.usl_val) AS usl_val,
+                            ANY_VALUE(b.lsl_val) AS lsl_val
+                        FROM base_filtered b
+                        JOIN q_bounds q ON b.time_period = q.time_period
+                        GROUP BY 1, 2
+                        HAVING COUNT(*) >= 5
+                    )
+                    SELECT
+                        time_period,
+                        sample_size AS total_n,
+                        CASE 
+                            WHEN std_v <= 1e-6 THEN 1.33
+                            WHEN usl_val IS NULL AND lsl_val IS NULL THEN NULL
+                            WHEN lsl_val IS NULL THEN (usl_val - avg_v) / (3.0 * std_v)
+                            ELSE LEAST((usl_val - avg_v) / (3.0 * std_v), (avg_v - lsl_val) / (3.0 * std_v))
+                        END AS weighted_cpk,
+                        avg_v AS weighted_avg,
+                        std_v AS weighted_std,
+                        outliers_count AS total_outliers
+                    FROM spec_daily_stats
+                    ORDER BY 1
+                """
+                params = [article10]
+            else:
+                sql = f"""
+                    WITH base_filtered AS (
+                        SELECT
+                            {time_expr} AS time_period,
+                            article10,
+                            {v_expr} AS v_measure,
+                            {usl_expr} AS usl_val,
+                            {lsl_expr} AS lsl_val
+                        FROM clean_yield
+                        WHERE article10 IS NOT NULL AND article10 != ''
+                          AND {col_name} IS NOT NULL
+                          {time_null_clause}
+                          {phase_cond}
+                          {exclude_clause}
+                    ),
+                    q_bounds AS (
+                        SELECT
+                            time_period,
+                            (2.5 * QUANTILE_CONT(v_measure, 0.75) - 1.5 * QUANTILE_CONT(v_measure, 0.25)) AS up_measure
+                        FROM base_filtered
+                        GROUP BY 1
+                    ),
+                    spec_daily_stats AS (
+                        SELECT
+                            b.time_period,
+                            b.article10,
+                            COUNT(CASE WHEN 1=1 {cond_outliers} THEN 1 END) AS sample_size,
+                            AVG(CASE WHEN 1=1 {cond_outliers} THEN b.v_measure END) AS avg_v,
+                            STDDEV(CASE WHEN 1=1 {cond_outliers} THEN b.v_measure END) AS std_v,
+                            SUM(CASE WHEN b.v_measure > q.up_measure THEN 1 ELSE 0 END) AS outliers_count,
+                            ANY_VALUE(b.usl_val) AS usl_val,
+                            ANY_VALUE(b.lsl_val) AS lsl_val
+                        FROM base_filtered b
+                        JOIN q_bounds q ON b.time_period = q.time_period
+                        GROUP BY 1, 2
+                        HAVING COUNT(*) >= 5
+                    ),
+                    spec_cpk AS (
+                        SELECT
+                            time_period,
+                            sample_size,
+                            avg_v,
+                            std_v,
+                            outliers_count,
+                            CASE 
+                                WHEN std_v <= 1e-6 THEN 1.33
+                                WHEN usl_val IS NULL AND lsl_val IS NULL THEN NULL
+                                WHEN lsl_val IS NULL THEN (usl_val - avg_v) / (3.0 * std_v)
+                                ELSE LEAST((usl_val - avg_v) / (3.0 * std_v), (avg_v - lsl_val) / (3.0 * std_v))
+                            END AS cpk_val
+                        FROM spec_daily_stats
+                    )
+                    SELECT
+                        time_period,
+                        SUM(sample_size) AS total_n,
+                        SUM(cpk_val * sample_size) / NULLIF(SUM(CASE WHEN cpk_val IS NOT NULL THEN sample_size ELSE 0 END), 0) AS weighted_cpk,
+                        SUM(avg_v * sample_size) / NULLIF(SUM(sample_size), 0) AS weighted_avg,
+                        SQRT(SUM(POWER(COALESCE(std_v, 0), 2) * sample_size) / NULLIF(SUM(CASE WHEN std_v IS NOT NULL THEN sample_size ELSE 0 END), 0)) AS weighted_std,
+                        SUM(outliers_count) AS total_outliers
+                    FROM spec_cpk
+                    GROUP BY 1
+                    ORDER BY 1
+                """
+                params = exclude_params
+
         rows = qry(sql, params)
 
         periods = sorted(list(set(str(r['time_period']) for r in rows)))
         period_idx = {p: i for i, p in enumerate(periods)}
 
+        # 趋势输出字典
+        trend_key = f"{ind_label} 综合 CPK"
         cpk_trends = {
-            "RFPP 综合 CPK": [None] * len(periods),
-            "RFH1 综合 CPK": [None] * len(periods)
+            trend_key: [None] * len(periods),
+            "current_cpk": [None] * len(periods)
         }
+
+        # 历史别名兼容
+        if indicator == "cony":
+            cpk_trends["CONY 综合 实际值"] = [None] * len(periods)
+            cpk_trends["CONY 综合 CPK"] = [None] * len(periods)
+        elif indicator == "weight":
+            cpk_trends["胎重 综合 偏差"] = [None] * len(periods)
+        elif indicator == "rfpp":
+            cpk_trends["RFPP 综合 CPK"] = [None] * len(periods)
+        elif indicator == "rfh1":
+            cpk_trends["RFH1 综合 CPK"] = [None] * len(periods)
+
         stats_by_date = {}
 
         for r in rows:
@@ -335,67 +368,44 @@ def get_trend_cpk(
             idx = period_idx[p_str]
 
             total_n = int(r['total_n']) if r.get('total_n') is not None else 0
-            cpk_rfpp = r['weighted_cpk_rfpp']
-            avg_rfpp = r.get('weighted_avg_rfpp')
-            std_rfpp = r.get('weighted_std_rfpp')
-            outliers_rfpp = int(r['outliers_rfpp']) if r.get('outliers_rfpp') is not None else None
+            cpk_raw = r.get('weighted_cpk')
+            cpk_v = round(float(cpk_raw), 4) if cpk_raw is not None and not (np.isnan(cpk_raw) or np.isinf(cpk_raw)) else None
+            avg_raw = r.get('weighted_avg')
+            avg_v = round(float(avg_raw), 3) if avg_raw is not None and not (np.isnan(avg_raw) or np.isinf(avg_raw)) else None
+            std_raw = r.get('weighted_std')
+            std_v = round(float(std_raw), 3) if std_raw is not None and not (np.isnan(std_raw) or np.isinf(std_raw)) else None
+            outliers_v = int(r['total_outliers']) if r.get('total_outliers') is not None else None
 
-            cpk_rfh1 = r['weighted_cpk_rfh1']
-            avg_rfh1 = r.get('weighted_avg_rfh1')
-            std_rfh1 = r.get('weighted_std_rfh1')
-            outliers_rfh1 = int(r['outliers_rfh1']) if r.get('outliers_rfh1') is not None else None
+            cpk_trends[trend_key][idx] = cpk_v
+            cpk_trends["current_cpk"][idx] = cpk_v
 
-            cpk_cony = r.get('weighted_cpk_cony')
-            avg_cony = r['weighted_avg_cony']
-            std_cony = r.get('weighted_std_cony')
-            outliers_cony = int(r['outliers_cony']) if r.get('outliers_cony') is not None else None
+            if indicator == "cony":
+                cpk_trends["CONY 综合 实际值"][idx] = avg_v
+                cpk_trends["CONY 综合 CPK"][idx] = cpk_v
+            elif indicator == "weight":
+                cpk_trends["胎重 综合 偏差"][idx] = avg_v
+            elif indicator == "rfpp":
+                cpk_trends["RFPP 综合 CPK"][idx] = cpk_v
+            elif indicator == "rfh1":
+                cpk_trends["RFH1 综合 CPK"][idx] = cpk_v
 
-            avg_weight = r['weighted_diff_weight']
-            std_weight = r.get('weighted_std_weight')
-            outliers_weight = int(r['outliers_weight']) if r.get('outliers_weight') is not None else None
-
-            p_stats = {
+            stats_by_date[p_str] = {
                 "total_n": total_n,
-                "rfpp": {
-                    "cpk": round(float(cpk_rfpp), 4) if cpk_rfpp is not None and not (np.isnan(cpk_rfpp) or np.isinf(cpk_rfpp)) else None,
-                    "mean": round(float(avg_rfpp), 3) if avg_rfpp is not None and not (np.isnan(avg_rfpp) or np.isinf(avg_rfpp)) else None,
-                    "std": round(float(std_rfpp), 3) if std_rfpp is not None and not (np.isnan(std_rfpp) or np.isinf(std_rfpp)) else None,
-                    "outliers": outliers_rfpp
-                },
-                "rfh1": {
-                    "cpk": round(float(cpk_rfh1), 4) if cpk_rfh1 is not None and not (np.isnan(cpk_rfh1) or np.isinf(cpk_rfh1)) else None,
-                    "mean": round(float(avg_rfh1), 3) if avg_rfh1 is not None and not (np.isnan(avg_rfh1) or np.isinf(avg_rfh1)) else None,
-                    "std": round(float(std_rfh1), 3) if std_rfh1 is not None and not (np.isnan(std_rfh1) or np.isinf(std_rfh1)) else None,
-                    "outliers": outliers_rfh1
-                },
-                "cony": {
-                    "cpk": round(float(cpk_cony), 4) if cpk_cony is not None and not (np.isnan(cpk_cony) or np.isinf(cpk_cony)) else None,
-                    "mean": round(float(avg_cony), 3) if avg_cony is not None and not (np.isnan(avg_cony) or np.isinf(avg_cony)) else None,
-                    "std": round(float(std_cony), 3) if std_cony is not None and not (np.isnan(std_cony) or np.isinf(std_cony)) else None,
-                    "outliers": outliers_cony
-                },
-                "weight": {
-                    "cpk": round(float(avg_weight), 4) if avg_weight is not None and not (np.isnan(avg_weight) or np.isinf(avg_weight)) else None,
-                    "mean": round(float(avg_weight), 3) if avg_weight is not None and not (np.isnan(avg_weight) or np.isinf(avg_weight)) else None,
-                    "std": round(float(std_weight), 3) if std_weight is not None and not (np.isnan(std_weight) or np.isinf(std_weight)) else None,
-                    "outliers": outliers_weight
+                "cpk": cpk_v,
+                "mean": avg_v,
+                "std": std_v,
+                "outliers": outliers_v,
+                "indicator": indicator,
+                "label": ind_label,
+                "unit": unit,
+                # 兼容旧组件取 stats_by_date[d][indicator]
+                indicator: {
+                    "cpk": cpk_v,
+                    "mean": avg_v,
+                    "std": std_v,
+                    "outliers": outliers_v
                 }
             }
-            stats_by_date[p_str] = p_stats
-
-            if cpk_rfpp is not None and not (np.isnan(cpk_rfpp) or np.isinf(cpk_rfpp)):
-                cpk_trends["RFPP 综合 CPK"][idx] = round(float(cpk_rfpp), 4)
-            if cpk_rfh1 is not None and not (np.isnan(cpk_rfh1) or np.isinf(cpk_rfh1)):
-                cpk_trends["RFH1 综合 CPK"][idx] = round(float(cpk_rfh1), 4)
-            if cpk_cony is not None and not (np.isnan(cpk_cony) or np.isinf(cpk_cony)):
-                cpk_trends["CONY 综合 CPK"] = cpk_trends.get("CONY 综合 CPK", [None] * len(periods))
-                cpk_trends["CONY 综合 CPK"][idx] = round(float(cpk_cony), 4)
-            if avg_cony is not None and not (np.isnan(avg_cony) or np.isinf(avg_cony)):
-                cpk_trends["CONY 综合 实际值"] = cpk_trends.get("CONY 综合 实际值", [None] * len(periods))
-                cpk_trends["CONY 综合 实际值"][idx] = round(float(avg_cony), 4)
-            if avg_weight is not None and not (np.isnan(avg_weight) or np.isinf(avg_weight)):
-                cpk_trends["胎重 综合 偏差"] = cpk_trends.get("胎重 综合 偏差", [None] * len(periods))
-                cpk_trends["胎重 综合 偏差"][idx] = round(float(avg_weight), 4)
 
         return {
             "status": "success",
@@ -412,3 +422,308 @@ def get_trend_cpk(
 
 # 别名兼容原命名
 get_cpk_trend = get_trend_cpk
+
+
+def get_trend_production_anomaly(
+    grain: str = "daily",
+    article10: Optional[str] = None,
+    time_col: Optional[str] = "tu_first_loc_timestamp",
+    phase: Optional[str] = "all",
+    shift: Optional[str] = "all"
+) -> dict:
+    """获取每日/每周生产总量、正常量、TU/TG/TB 异常量及异常率聚合统计"""
+    try:
+        if not isinstance(article10, str):
+            article10 = None
+        if not isinstance(time_col, str) or not time_col:
+            time_col = "tu_first_loc_timestamp"
+        if not isinstance(phase, str):
+            phase = "all"
+        if not isinstance(shift, str):
+            shift = "all"
+        if not isinstance(grain, str):
+            grain = "daily"
+
+        col_ref = time_col
+        date_cast = f"STRFTIME(CAST((TRY_CAST({col_ref} AS TIMESTAMP) - INTERVAL 8 HOUR) AS DATE), '%Y-%m-%d')"
+        if grain == "weekly":
+            time_expr = f"STRFTIME(DATE_TRUNC('week', CAST(TRY_CAST({col_ref} AS TIMESTAMP) AS DATE)), '%Y-%m-%d')"
+        else:
+            time_expr = date_cast
+
+
+        where_conds = [
+            f"{col_ref} IS NOT NULL",
+            build_production_time_where(col_ref, shift=shift)
+        ]
+        params = []
+
+        phase_cond = get_phase_sql_condition(phase).strip()
+        if phase_cond:
+            if phase_cond.startswith("AND "):
+                phase_cond = phase_cond[4:].strip()
+            where_conds.append(phase_cond)
+
+
+        if article10:
+            where_conds.append("article10 = ?")
+            params.append(article10)
+
+        where_str = " AND ".join(where_conds)
+
+        # 检查 clean_yield 是否包含 is_anomaly_overall
+        desc_rows = qry("DESCRIBE clean_yield")
+        cols = [r.get('column_name') or r.get('Field') or list(r.values())[0] for r in desc_rows]
+        has_anomaly_cols = 'is_anomaly_overall' in cols
+
+        # 17 项指标配置定义 (TU 7项, TG 7项, TB 3项)
+        indicators_by_process = {
+            "TU": [
+                {"key": "rfpp", "label": "RFPP", "col": "grade_rfppwc_first"},
+                {"key": "rfh1", "label": "RFH1", "col": "grade_rfh1wc_first"},
+                {"key": "rfh2", "label": "RFH2", "col": "grade_rfh2wc_first"},
+                {"key": "lfpp", "label": "LFPP", "col": "grade_lfppwc_first"},
+                {"key": "lfh1", "label": "LFH1", "col": "grade_lfh1wc_first"},
+                {"key": "cony", "label": "CONY", "col": "grade_cony_first"},
+                {"key": "plys", "label": "PLYS", "col": "grade_plys_first"},
+            ],
+            "TG": [
+                {"key": "tbul", "label": "TBUL", "col": "grade_tbul_first"},
+                {"key": "bbul", "label": "BBUL", "col": "grade_bbul_first"},
+                {"key": "tdep", "label": "TDEP", "col": "grade_tdep_first"},
+                {"key": "bdep", "label": "BDEP", "col": "grade_bdep_first"},
+                {"key": "tlro", "label": "TLRO", "col": "grade_tlro_first"},
+                {"key": "blro", "label": "BLRO", "col": "grade_blro_first"},
+                {"key": "crro", "label": "CRRO", "col": "grade_crro_first"},
+            ],
+            "TB": [
+                {"key": "tbalw", "label": "TBALW", "col": "grade_tbalw_first"},
+                {"key": "bbalw", "label": "BBALW", "col": "grade_bbalw_first"},
+                {"key": "sbalw", "label": "SBALW", "col": "grade_sbalw_first"},
+            ]
+        }
+
+        detail_selects = []
+        for proc, items in indicators_by_process.items():
+            for it in items:
+                k = it["key"]
+                c = it["col"]
+                if c in cols:
+                    detail_selects.append(f"COALESCE(SUM(CASE WHEN {c} != 'A' AND {c} IS NOT NULL AND {c} != '' THEN 1 ELSE 0 END), 0) AS {k}_anomalies")
+                else:
+                    detail_selects.append(f"0 AS {k}_anomalies")
+        detail_selects_str = ",\n                    " + ",\n                    ".join(detail_selects)
+
+        if has_anomaly_cols:
+            sql = f"""
+                SELECT 
+                    {time_expr} AS date_str,
+                    COUNT(*) AS total_tires,
+                    COALESCE(SUM(is_anomaly_overall), 0) AS anomaly_tires,
+                    COALESCE(SUM(CASE WHEN is_anomaly_overall = 0 THEN 1 ELSE 0 END), 0) AS normal_tires,
+                    COALESCE(SUM(is_anomaly_tu), 0) AS tu_anomalies,
+                    COALESCE(SUM(is_anomaly_tg), 0) AS tg_anomalies,
+                    COALESCE(SUM(is_anomaly_tb), 0) AS tb_anomalies,
+                    COALESCE(SUM(CASE WHEN is_anomaly_tu = 1 AND is_anomaly_tg = 0 AND is_anomaly_tb = 0 THEN 1 ELSE 0 END), 0) AS tu_only_anomalies,
+                    COALESCE(SUM(CASE WHEN is_anomaly_tu = 0 AND is_anomaly_tg = 1 AND is_anomaly_tb = 0 THEN 1 ELSE 0 END), 0) AS tg_only_anomalies,
+                    COALESCE(SUM(CASE WHEN is_anomaly_tu = 0 AND is_anomaly_tg = 0 AND is_anomaly_tb = 1 THEN 1 ELSE 0 END), 0) AS tb_only_anomalies,
+                    COALESCE(SUM(CASE WHEN (is_anomaly_tu + is_anomaly_tg + is_anomaly_tb) > 1 THEN 1 ELSE 0 END), 0) AS multi_anomalies,
+                    ROUND(COALESCE(SUM(is_anomaly_overall), 0) * 100.0 / NULLIF(COUNT(*), 0), 2) AS anomaly_rate,
+                    ROUND(COALESCE(SUM(is_anomaly_tu), 0) * 100.0 / NULLIF(COUNT(*), 0), 2) AS tu_anomaly_rate,
+                    ROUND(COALESCE(SUM(is_anomaly_tg), 0) * 100.0 / NULLIF(COUNT(*), 0), 2) AS tg_anomaly_rate,
+                    ROUND(COALESCE(SUM(is_anomaly_tb), 0) * 100.0 / NULLIF(COUNT(*), 0), 2) AS tb_anomaly_rate{detail_selects_str}
+                FROM clean_yield
+                WHERE {where_str}
+                GROUP BY 1
+                ORDER BY 1 ASC
+            """
+        else:
+            sql = f"""
+                SELECT 
+                    {time_expr} AS date_str,
+                    COUNT(*) AS total_tires,
+                    0 AS anomaly_tires,
+                    COUNT(*) AS normal_tires,
+                    0 AS tu_anomalies,
+                    0 AS tg_anomalies,
+                    0 AS tb_anomalies,
+                    0 AS tu_only_anomalies,
+                    0 AS tg_only_anomalies,
+                    0 AS tb_only_anomalies,
+                    0 AS multi_anomalies,
+                    0.0 AS anomaly_rate,
+                    0.0 AS tu_anomaly_rate,
+                    0.0 AS tg_anomaly_rate,
+                    0.0 AS tb_anomaly_rate{detail_selects_str}
+                FROM clean_yield
+                WHERE {where_str}
+                GROUP BY 1
+                ORDER BY 1 ASC
+            """
+
+        rows = qry(sql, params if params else None)
+        
+        # 格式化日期与数值
+        res_data = []
+        for r in rows:
+            if not r.get('date_str'):
+                continue
+            
+            raw_counts = {}
+            for proc, items in indicators_by_process.items():
+                for it in items:
+                    k = it["key"]
+                    raw_counts[k] = int(r.get(f"{k}_anomalies") or 0)
+
+            res_data.append({
+                "date": str(r['date_str']),
+                "total_tires": int(r['total_tires'] or 0),
+                "normal_tires": int(r['normal_tires'] or 0),
+                "anomaly_tires": int(r['anomaly_tires'] or 0),
+                "tu_anomalies": int(r['tu_anomalies'] or 0),
+                "tg_anomalies": int(r['tg_anomalies'] or 0),
+                "tb_anomalies": int(r['tb_anomalies'] or 0),
+                "tu_only_anomalies": int(r.get('tu_only_anomalies') or 0),
+                "tg_only_anomalies": int(r.get('tg_only_anomalies') or 0),
+                "tb_only_anomalies": int(r.get('tb_only_anomalies') or 0),
+                "multi_anomalies": int(r.get('multi_anomalies') or 0),
+                "anomaly_rate": float(r['anomaly_rate'] or 0.0),
+                "tu_anomaly_rate": float(r['tu_anomaly_rate'] or 0.0),
+                "tg_anomaly_rate": float(r['tg_anomaly_rate'] or 0.0),
+                "tb_anomaly_rate": float(r['tb_anomaly_rate'] or 0.0),
+                "indicator_counts": raw_counts
+            })
+
+        # 计算相较于前一天的综合及工序异常率增长比例 (%) 与绝对变动点，以及 17 项详细指标日环比增幅
+        for idx, item in enumerate(res_data):
+            tot = max(item["total_tires"], 1)
+            # 计算当日各指标异常率 (%)
+            curr_ind_rates = {k: (item["indicator_counts"][k] * 100.0 / tot) for k in item["indicator_counts"]}
+            item["indicator_rates"] = curr_ind_rates
+
+            if idx == 0:
+                item["anomaly_growth_rate"] = None
+                item["anomaly_rate_diff"] = 0.0
+                item["tu_growth_rate"] = None
+                item["tg_growth_rate"] = None
+                item["tb_growth_rate"] = None
+                prev_ind_rates = None
+            else:
+                prev_item = res_data[idx - 1]
+                prev_ind_rates = prev_item["indicator_rates"]
+
+                # 综合异常率日环比
+                prev_rate = prev_item["anomaly_rate"]
+                curr_rate = item["anomaly_rate"]
+                item["anomaly_rate_diff"] = round(curr_rate - prev_rate, 2)
+                if prev_rate > 1e-6:
+                    item["anomaly_growth_rate"] = round((curr_rate - prev_rate) / prev_rate * 100.0, 2)
+                else:
+                    item["anomaly_growth_rate"] = 0.0 if curr_rate == 0 else 100.0
+
+                # TU 均匀性异常率日环比
+                prev_tu = prev_item["tu_anomaly_rate"]
+                curr_tu = item["tu_anomaly_rate"]
+                if prev_tu > 1e-6:
+                    item["tu_growth_rate"] = round((curr_tu - prev_tu) / prev_tu * 100.0, 2)
+                else:
+                    item["tu_growth_rate"] = 0.0 if curr_tu == 0 else 100.0
+
+                # TG 几何尺寸异常率日环比
+                prev_tg = prev_item["tg_anomaly_rate"]
+                curr_tg = item["tg_anomaly_rate"]
+                if prev_tg > 1e-6:
+                    item["tg_growth_rate"] = round((curr_tg - prev_tg) / prev_tg * 100.0, 2)
+                else:
+                    item["tg_growth_rate"] = 0.0 if curr_tg == 0 else 100.0
+
+                # TB 动平衡异常率日环比
+                prev_tb = prev_item["tb_anomaly_rate"]
+                curr_tb = item["tb_anomaly_rate"]
+                if prev_tb > 1e-6:
+                    item["tb_growth_rate"] = round((curr_tb - prev_tb) / prev_tb * 100.0, 2)
+                else:
+                    item["tb_growth_rate"] = 0.0 if curr_tb == 0 else 100.0
+
+            prev_item = res_data[idx - 1] if idx > 0 else None
+            next_item = res_data[idx + 1] if idx + 1 < len(res_data) else None
+
+            # 统计各工序下详细指标日环比增幅，并按增幅降序排序
+            detail_indicators = {}
+            for proc, items in indicators_by_process.items():
+                proc_ind_list = []
+                for it in items:
+                    k = it["key"]
+                    c_rate = curr_ind_rates[k]
+                    cnt = item["indicator_counts"][k]
+
+                    # 前一日与后一日指标数据
+                    prev_cnt = prev_item["indicator_counts"][k] if prev_item else None
+                    prev_date = prev_item["date"] if prev_item else None
+                    next_cnt = next_item["indicator_counts"][k] if next_item else None
+                    next_date = next_item["date"] if next_item else None
+
+                    if prev_ind_rates is None:
+                        g_rate = None
+                        d_diff = 0.0
+                    else:
+                        p_rate = prev_ind_rates.get(k, 0.0)
+                        d_diff = round(c_rate - p_rate, 4)
+                        if p_rate > 1e-6:
+                            g_rate = round((c_rate - p_rate) / p_rate * 100.0, 2)
+                        else:
+                            g_rate = 0.0 if c_rate == 0 else 100.0
+                    proc_ind_list.append({
+                        "key": k,
+                        "label": it["label"],
+                        "count": cnt,
+                        "rate": round(c_rate, 4),
+                        "growth_rate": g_rate,
+                        "diff": d_diff,
+                        "date": item["date"],
+                        "prev_count": prev_cnt,
+                        "prev_date": prev_date,
+                        "next_count": next_cnt,
+                        "next_date": next_date
+                    })
+                # 按照增幅降序排序 (growth_rate 降序，其次当日异常率/数量降序)
+                proc_ind_list.sort(key=lambda x: (
+                    x["growth_rate"] if x["growth_rate"] is not None else -99999,
+                    x["rate"],
+                    x["count"]
+                ), reverse=True)
+                detail_indicators[proc] = proc_ind_list
+
+            item["detail_indicators"] = detail_indicators
+
+            # 计算当日日环比增幅排行第一的工序 (与悬浮卡片中工序排序严格 100% 一致)
+            process_rank = [
+                {"name": "TB", "growth": item["tb_growth_rate"], "rate": item["tb_anomaly_rate"]},
+                {"name": "TU", "growth": item["tu_growth_rate"], "rate": item["tu_anomaly_rate"]},
+                {"name": "TG", "growth": item["tg_growth_rate"], "rate": item["tg_anomaly_rate"]},
+            ]
+            process_rank.sort(key=lambda x: (
+                x["growth"] if x["growth"] is not None else -99999,
+                x["rate"]
+            ), reverse=True)
+            top_proc = process_rank[0]["name"]
+            item["top_process"] = top_proc
+
+            # 统计该第一工序下增幅最大的详细指标
+            top_ind = detail_indicators[top_proc][0]["key"] if detail_indicators.get(top_proc) else None
+            item["top_indicator"] = top_ind
+
+        # 清理临时字段以精简数据传输体积
+        for item in res_data:
+            item.pop("indicator_counts", None)
+            item.pop("indicator_rates", None)
+
+        return {
+            "status": "success",
+            "data": res_data
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+

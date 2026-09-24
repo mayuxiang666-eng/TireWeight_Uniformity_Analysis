@@ -53,3 +53,16 @@ __screenshots__/
 backend/data/*.parquet
 backend/config/db_config.json
 backend/config/secret.key
+
+# Scratch / Debug directories (never commit)
+scratch/
+backend/scratch/
+scratch_*.py
+
+# DuckDB runtime files
+**/*.duckdb
+backend/data/clean_yield.duckdb
+
+# Locally exported reports
+cpk_indicators_trend.html
+*.html

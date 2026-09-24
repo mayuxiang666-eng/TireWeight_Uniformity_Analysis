@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from backend.core.db import qry
-from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl
+from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl, INDICATORS_SPEC
 from backend.core.serializer import sanitize_data
 from backend.core.cache_utils import (
     recommend_cache_key,
@@ -27,11 +27,12 @@ from backend.core.time_utils import build_production_time_where, get_phase_sql_c
 
 def get_cgrs_records(
     workcenter: str,
-    date: str,
+    date: Optional[str] = None,
     article: Optional[str] = None,
-    indicator: Optional[str] = "rfpp"
+    indicator: Optional[str] = "rfpp",
+    event_time: Optional[str] = None
 ):
-    """根据成型机台编号、日期以及规格代码查询 CGRS 参数修改记录（支持精确匹配与一段/二段机台编号兼容映射、规格7位/10位代码兼容匹配，并附带修改前后 50 条 CPK 对比数据）"""
+    """根据成型机台编号、日期以及规格代码查询 CGRS 参数修改记录（支持按精确调参时间戳定位，支持精确匹配与一段/二段机台编号兼容映射、规格7位/10位代码兼容匹配，并附带修改前后 50 条 CPK 对比数据）"""
     try:
         if hasattr(workcenter, "default"):
             workcenter = workcenter.default if workcenter.default is not ... else ""
@@ -41,6 +42,8 @@ def get_cgrs_records(
             article = article.default if article.default is not ... else None
         if hasattr(indicator, "default"):
             indicator = indicator.default if indicator.default is not ... else "rfpp"
+        if hasattr(event_time, "default"):
+            event_time = event_time.default if event_time.default is not ... else None
         
         wc_clean = str(workcenter or "").strip().upper()
         # 兼容映射候选集（成型机 TB2xx 与 TB1xx 双向自动关联，硫化机 CUxx 精确匹配）
@@ -69,15 +72,85 @@ def get_cgrs_records(
         
         cgrs_placeholders = ",".join(["?"] * len(cgrs_candidates))
         mach_placeholders = ",".join(["?"] * len(mach_candidates))
+
+        # 若提供了精确的调参时间戳，直接定位该次调参事件记录（无需依赖 TU 完检日期）
+        if event_time and str(event_time).strip():
+            ev_ts_clean = str(event_time).strip()
+            sql_ev = f"""
+                SELECT 
+                    event_timestamp,
+                    TechOffsetHistoryLocalDate,
+                    TechOffsetLocalDate,
+                    Workcenter,
+                    COALESCE(NULLIF(ParameterLocalName, ''), ParameterGlobalName, ParameterName) AS ParameterLocalName,
+                    ParameterGlobalName,
+                    ParameterName,
+                    ParameterValue,
+                    TechOffsetHistoryValueFrom,
+                    TechOffsetHistoryValueTo,
+                    TechOffsetValue,
+                    ParameterUnitSymbol,
+                    ProdSpecific2,
+                    RecipeDescription,
+                    UserName,
+                    ProcessTypeName,
+                    COALESCE(CAST(Item AS VARCHAR), '') AS Item,
+                    Priority,
+                    COALESCE(CAST(TechOffsetComments AS VARCHAR), CAST(TechOffsetHistoryComments AS VARCHAR), '') AS comments
+                FROM cgrs_records
+                WHERE Workcenter IN ({cgrs_placeholders})
+                  AND event_timestamp IS NOT NULL
+                  AND abs(epoch(TRY_CAST(event_timestamp AS TIMESTAMP)) - epoch(?::TIMESTAMP)) <= 600
+            """
+            params_ev = list(cgrs_candidates) + [ev_ts_clean]
+            if not is_cu and article and article.strip():
+                art_clean = article.strip()
+                prefix7 = art_clean[:7]
+                sql_ev += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ? OR RecipeDescription LIKE ?)"
+                params_ev.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%", f"%{prefix7}%"])
+            elif is_cu and article and article.strip():
+                art_clean = article.strip()
+                prefix7 = art_clean[:7]
+                sql_ev += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+                params_ev.extend([prefix7, f"%{prefix7}%"])
+            sql_ev += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
+            try:
+                ev_rows = qry(sql_ev, params_ev)
+            except Exception:
+                ev_rows = []
+
+            # 计算基准日期对比
+            target_calc_date = date or ev_ts_clean[:10]
+            comparison = calculate_cgrs_cpk_comparison(
+                workcenter=workcenter,
+                article10=article,
+                target_date=target_calc_date,
+                indicator=indicator or "rfpp",
+                limit_n=20
+            )
+            return {
+                "status": "success",
+                "data": sanitize_data(ev_rows),
+                "comparison": sanitize_data(comparison),
+                "meta": {
+                    "workcenter": workcenter,
+                    "date": target_calc_date,
+                    "event_time": ev_ts_clean,
+                    "article": article,
+                    "indicator": indicator,
+                    "count": len(ev_rows),
+                    "matched_candidates": cgrs_candidates
+                }
+            }
         
-        # 优先按当天 TU 终检轮胎的成型(GT)/硫化(CT)生产时间区间 [min_time, max_time] 圈定调参
+        # 常规模式：按当天 TU 终检轮胎的成型(GT)/硫化(CT)生产时间区间 [min_time, max_time] 圈定调参
         range_sql_parts = [
             f"{wc_col} IN ({mach_placeholders})",
             "TRY_CAST(tu_first_loc_timestamp AS DATE) = ?::DATE",
             f"{time_col} IS NOT NULL"
         ]
         range_params = list(mach_candidates) + [date]
-        if not is_cu and article and article.strip():
+        if article and article.strip():
             art_clean = article.strip()
             prefix7 = art_clean[:7]
             range_sql_parts.append("(article10 = ? OR article10 LIKE ?)")
@@ -155,6 +228,11 @@ def get_cgrs_records(
             prefix7 = art_clean[:7]
             sql += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ? OR RecipeDescription LIKE ?)"
             params.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%", f"%{prefix7}%"])
+        elif is_cu and article and article.strip():
+            art_clean = article.strip()
+            prefix7 = art_clean[:7]
+            sql += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+            params.extend([prefix7, f"%{prefix7}%"])
         
         sql += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
         rows = qry(sql, params)
@@ -193,16 +271,17 @@ def get_cgrs_records(
 
 def compute_cgrs_controlled_analysis_data(
     workcenter: str,
-    date: str,
+    date: Optional[str] = None,
     article: Optional[str] = None,
     indicator: str = "rfpp",
     top_machines: Optional[str] = None,
     same_day_only: bool = False,
     limit_per_path: int = 20,
-    min_samples_threshold: int = 1
+    min_samples_threshold: int = 1,
+    event_time: Optional[str] = None
 ):
     """
-    成型机 CGRS 控制变量分析核心计算引擎（成型 GT ➔ 硫化 CT ➔ 终检 TU 全流程路径拆分与有效路径加总 CPK 对照）
+    成型机 CGRS 控制变量分析核心计算引擎（成型 GT ➔ 硫化 CT ➔ 终检 TU 全流程路径拆分与有效路径加总 CPK 对照，支持按精确调参时间戳直接锚定）
     """
     if not workcenter:
         return {"status": "error", "message": "缺少成型机台编号 workcenter", "has_cgrs": False, "events": []}
@@ -242,98 +321,203 @@ def compute_cgrs_controlled_analysis_data(
     cgrs_placeholders = ",".join(["?"] * len(cgrs_candidates))
     mach_placeholders = ",".join(["?"] * len(mach_candidates))
 
-    # 圈出样本池（根据 tu_first_shift_date = 目标日期 圈选，提取生产时间范围 [min_time, max_time]）
-    range_sql_parts = [
-        f"{wc_col} IN ({mach_placeholders})",
-        "TRY_CAST(tu_first_loc_timestamp AS DATE) = ?::DATE",
-        f"{time_col} IS NOT NULL"
-    ]
-    range_params = list(mach_candidates) + [date]
-    if article and article.strip():
-        art_clean = article.strip()
-        prefix7 = art_clean[:7]
-        range_sql_parts.append("(article10 = ? OR article10 LIKE ?)")
-        range_params.extend([art_clean, f"{prefix7}%"])
+    # 若提供了精确的调参时间戳 event_time，直接按该次调参事件检索（解除 TU 终检完检日期强绑定）
+    if event_time and str(event_time).strip():
+        same_day_only = False
+        ev_ts_clean = str(event_time).strip()
+        cgrs_sql = f"""
+            SELECT
+                event_timestamp,
+                TechOffsetHistoryLocalDate,
+                TechOffsetLocalDate,
+                Workcenter,
+                COALESCE(NULLIF(ParameterLocalName, ''), ParameterGlobalName, ParameterName) AS ParameterLocalName,
+                ParameterGlobalName,
+                ParameterName,
+                ParameterValue,
+                TechOffsetHistoryValueFrom,
+                TechOffsetHistoryValueTo,
+                TechOffsetValue,
+                ParameterUnitSymbol,
+                ProdSpecific2,
+                UserName,
+                ProcessTypeName,
+                COALESCE(CAST(Item AS VARCHAR), '') AS Item,
+                Priority,
+                COALESCE(CAST(TechOffsetComments AS VARCHAR), CAST(TechOffsetHistoryComments AS VARCHAR), '') AS comments
+            FROM cgrs_records
+            WHERE Workcenter IN ({cgrs_placeholders})
+              AND event_timestamp IS NOT NULL
+              AND abs(epoch(TRY_CAST(event_timestamp AS TIMESTAMP)) - epoch(?::TIMESTAMP)) <= 600
+        """
+        cgrs_params = list(cgrs_candidates) + [ev_ts_clean]
+        if not is_cu and article and article.strip():
+            art_clean = article.strip()
+            prefix7 = art_clean[:7]
+            cgrs_sql += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ?)"
+            cgrs_params.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%"])
+        elif is_cu and article and article.strip():
+            art_clean = article.strip()
+            prefix7 = art_clean[:7]
+            cgrs_sql += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+            cgrs_params.extend([prefix7, f"%{prefix7}%"])
+        cgrs_sql += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
+        try:
+            cgrs_rows = qry(cgrs_sql, cgrs_params)
+        except Exception:
+            cgrs_rows = []
 
-    range_sql = f"""
-        SELECT
-            MIN(TRY_CAST({time_col} AS TIMESTAMP)) AS min_time,
-            MAX(TRY_CAST({time_col} AS TIMESTAMP)) AS max_time
-        FROM clean_yield
-        WHERE {" AND ".join(range_sql_parts)}
-    """
-    try:
-        range_rows = qry(range_sql, range_params)
-        min_time = range_rows[0]['min_time'] if range_rows else None
-        max_time = range_rows[0]['max_time'] if range_rows else None
-    except Exception:
-        min_time, max_time = None, None
+        if not cgrs_rows:
+            # 放宽至该天
+            cgrs_sql_day = f"""
+                SELECT
+                    event_timestamp,
+                    TechOffsetHistoryLocalDate,
+                    TechOffsetLocalDate,
+                    Workcenter,
+                    COALESCE(NULLIF(ParameterLocalName, ''), ParameterGlobalName, ParameterName) AS ParameterLocalName,
+                    ParameterGlobalName,
+                    ParameterName,
+                    ParameterValue,
+                    TechOffsetHistoryValueFrom,
+                    TechOffsetHistoryValueTo,
+                    TechOffsetValue,
+                    ParameterUnitSymbol,
+                    ProdSpecific2,
+                    UserName,
+                    ProcessTypeName,
+                    COALESCE(CAST(Item AS VARCHAR), '') AS Item,
+                    Priority,
+                    COALESCE(CAST(TechOffsetComments AS VARCHAR), CAST(TechOffsetHistoryComments AS VARCHAR), '') AS comments
+                FROM cgrs_records
+                WHERE Workcenter IN ({cgrs_placeholders})
+                  AND event_timestamp IS NOT NULL
+                  AND TRY_CAST(event_timestamp AS DATE) = TRY_CAST(? AS DATE)
+            """
+            cgrs_params_day = list(cgrs_candidates) + [ev_ts_clean[:10]]
+            if not is_cu and article and article.strip():
+                cgrs_sql_day += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ?)"
+                cgrs_params_day.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%"])
+            elif is_cu and article and article.strip():
+                cgrs_sql_day += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+                cgrs_params_day.extend([prefix7, f"%{prefix7}%"])
+            cgrs_sql_day += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
+            try:
+                cgrs_rows = qry(cgrs_sql_day, cgrs_params_day)
+            except Exception:
+                cgrs_rows = []
 
-    if not (min_time and max_time):
-        return {
-            "status": "success",
-            "has_cgrs": False,
-            "events_count": 0,
-            "message": f"机台 [{workcenter}] 在 [{date}] 当天无生产样本数据，无法计算时间匹配 CGRS 调参记录",
-            "conclusion_type": "no_samples",
-            "conclusion_title": "无生产样本数据",
-            "conclusion_text": f"机台 [{workcenter}] 在 [{date}] 未查询到生产样本数据，无法计算时间段匹配 CGRS 调参记录",
-            "events": []
-        }
+        if not cgrs_rows:
+            return {
+                "status": "success",
+                "has_cgrs": False,
+                "events_count": 0,
+                "message": f"机台 [{workcenter}] 在调参时刻 [{ev_ts_clean}] 未查询到 CGRS 调参记录",
+                "conclusion_type": "no_cgrs",
+                "conclusion_title": "未查询到调参记录",
+                "conclusion_text": f"机台 [{workcenter}] 在调参时刻 [{ev_ts_clean}] 未查询到 CGRS 调参记录，无法执行控制变量排查",
+                "events": []
+            }
+        if not date:
+            date = str(cgrs_rows[0].get('event_timestamp'))[:10]
+    else:
+        # 常规模式：根据 tu_first_shift_date = 目标日期 圈选
+        range_sql_parts = [
+            f"{wc_col} IN ({mach_placeholders})",
+            "TRY_CAST(tu_first_loc_timestamp AS DATE) = ?::DATE",
+            f"{time_col} IS NOT NULL"
+        ]
+        range_params = list(mach_candidates) + [date]
+        if article and article.strip():
+            art_clean = article.strip()
+            prefix7 = art_clean[:7]
+            range_sql_parts.append("(article10 = ? OR article10 LIKE ?)")
+            range_params.extend([art_clean, f"{prefix7}%"])
 
-    # 放宽观察范围：从这批圈定样本最早加工时间前 48 小时（涵盖开机调试/前置调参）到最晚加工时间
-    cgrs_sql = f"""
-        SELECT
-            event_timestamp,
-            TechOffsetHistoryLocalDate,
-            TechOffsetLocalDate,
-            Workcenter,
-            COALESCE(NULLIF(ParameterLocalName, ''), ParameterGlobalName, ParameterName) AS ParameterLocalName,
-            ParameterGlobalName,
-            ParameterName,
-            ParameterValue,
-            TechOffsetHistoryValueFrom,
-            TechOffsetHistoryValueTo,
-            TechOffsetValue,
-            ParameterUnitSymbol,
-            ProdSpecific2,
-            UserName,
-            ProcessTypeName,
-            COALESCE(CAST(Item AS VARCHAR), '') AS Item,
-            Priority,
-            COALESCE(CAST(TechOffsetComments AS VARCHAR), CAST(TechOffsetHistoryComments AS VARCHAR), '') AS comments
-        FROM cgrs_records
-        WHERE Workcenter IN ({cgrs_placeholders})
-          AND event_timestamp IS NOT NULL
-          AND TRY_CAST(event_timestamp AS TIMESTAMP) >= ?::TIMESTAMP
-          AND TRY_CAST(event_timestamp AS TIMESTAMP) <= ?::TIMESTAMP
-    """
-    cgrs_params = list(cgrs_candidates) + [str(min_time), str(max_time)]
+        range_sql = f"""
+            SELECT
+                MIN(TRY_CAST({time_col} AS TIMESTAMP)) AS min_time,
+                MAX(TRY_CAST({time_col} AS TIMESTAMP)) AS max_time
+            FROM clean_yield
+            WHERE {" AND ".join(range_sql_parts)}
+        """
+        try:
+            range_rows = qry(range_sql, range_params)
+            min_time = range_rows[0]['min_time'] if range_rows else None
+            max_time = range_rows[0]['max_time'] if range_rows else None
+        except Exception:
+            min_time, max_time = None, None
 
-    if not is_cu and article and article.strip():
-        art_clean = article.strip()
-        prefix7 = art_clean[:7]
-        cgrs_sql += " AND (ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ?)"
-        cgrs_params.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%"])
+        if not (min_time and max_time):
+            return {
+                "status": "success",
+                "has_cgrs": False,
+                "events_count": 0,
+                "message": f"机台 [{workcenter}] 在 [{date}] 当天无生产样本数据，无法计算时间匹配 CGRS 调参记录",
+                "conclusion_type": "no_samples",
+                "conclusion_title": "无生产样本数据",
+                "conclusion_text": f"机台 [{workcenter}] 在 [{date}] 未查询到生产样本数据，无法计算时间段匹配 CGRS 调参记录",
+                "events": []
+            }
 
-    cgrs_sql += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
+        # 放宽观察范围：从这批圈定样本最早加工时间前 48 小时（涵盖开机调试/前置调参）到最晚加工时间
+        cgrs_sql = f"""
+            SELECT
+                event_timestamp,
+                TechOffsetHistoryLocalDate,
+                TechOffsetLocalDate,
+                Workcenter,
+                COALESCE(NULLIF(ParameterLocalName, ''), ParameterGlobalName, ParameterName) AS ParameterLocalName,
+                ParameterGlobalName,
+                ParameterName,
+                ParameterValue,
+                TechOffsetHistoryValueFrom,
+                TechOffsetHistoryValueTo,
+                TechOffsetValue,
+                ParameterUnitSymbol,
+                ProdSpecific2,
+                UserName,
+                ProcessTypeName,
+                COALESCE(CAST(Item AS VARCHAR), '') AS Item,
+                Priority,
+                COALESCE(CAST(TechOffsetComments AS VARCHAR), CAST(TechOffsetHistoryComments AS VARCHAR), '') AS comments
+            FROM cgrs_records
+            WHERE Workcenter IN ({cgrs_placeholders})
+              AND event_timestamp IS NOT NULL
+              AND TRY_CAST(event_timestamp AS TIMESTAMP) >= ?::TIMESTAMP
+              AND TRY_CAST(event_timestamp AS TIMESTAMP) <= ?::TIMESTAMP
+        """
+        cgrs_params = list(cgrs_candidates) + [str(min_time), str(max_time)]
 
-    try:
-        cgrs_rows = qry(cgrs_sql, cgrs_params)
-    except Exception:
-        cgrs_rows = []
+        if not is_cu and article and article.strip():
+            art_clean = article.strip()
+            prefix7 = art_clean[:7]
+            cgrs_sql += " AND (ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ?)"
+            cgrs_params.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%"])
+        elif is_cu and article and article.strip():
+            art_clean = article.strip()
+            prefix7 = art_clean[:7]
+            cgrs_sql += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+            cgrs_params.extend([prefix7, f"%{prefix7}%"])
 
-    if not cgrs_rows:
-        return {
-            "status": "success",
-            "has_cgrs": False,
-            "events_count": 0,
-            "message": f"机台 [{workcenter}] 在 [{date}] 未查询到 CGRS 调参记录",
-            "conclusion_type": "no_cgrs",
-            "conclusion_title": "未查询到调参记录",
-            "conclusion_text": f"机台 [{workcenter}] 在 [{date}] 未查询到 CGRS 调参记录，无法执行控制变量排查",
-            "events": []
-        }
+        cgrs_sql += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
+
+        try:
+            cgrs_rows = qry(cgrs_sql, cgrs_params)
+        except Exception:
+            cgrs_rows = []
+
+        if not cgrs_rows:
+            return {
+                "status": "success",
+                "has_cgrs": False,
+                "events_count": 0,
+                "message": f"机台 [{workcenter}] 在 [{date}] 未查询到 CGRS 调参记录",
+                "conclusion_type": "no_cgrs",
+                "conclusion_title": "未查询到调参记录",
+                "conclusion_text": f"机台 [{workcenter}] 在 [{date}] 未查询到 CGRS 调参记录，无法执行控制变量排查",
+                "events": []
+            }
 
     # 聚合成调参事件（自动合并 5 分钟 / 300 秒内同批次调参记录，避免多参数分布式提交导致拆解成 0 样本事件）
     clustered_events = []
@@ -433,6 +617,11 @@ def compute_cgrs_controlled_analysis_data(
         prefix7 = art_clean[:7]
         all_ts_sql += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ? OR RecipeDescription LIKE ?)"
         all_ts_params.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%", f"%{prefix7}%"])
+    elif is_cu and article and article.strip():
+        art_clean = article.strip()
+        prefix7 = art_clean[:7]
+        all_ts_sql += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+        all_ts_params.extend([prefix7, f"%{prefix7}%"])
     all_ts_sql += " ORDER BY event_timestamp ASC"
 
     try:
@@ -448,16 +637,14 @@ def compute_cgrs_controlled_analysis_data(
         all_timestamps = []
 
     # 确定指标字段与公差限
+    spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
     if indicator == "weight":
         ind_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
         usl, lsl = None, None
-    elif indicator == "cony":
-        ind_col = "TRY_CAST(cony_first AS DOUBLE)"
-        usl, lsl = get_spec_limits(article, indicator) if article else (100.0, None)
     else:
-        col_field = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+        col_field = spec_cfg["col"]
         ind_col = f"TRY_CAST({col_field} AS DOUBLE)"
-        usl, lsl = get_spec_limits(article, indicator) if article else (100.0, None)
+        usl, lsl = get_spec_limits(article, indicator) if article else (None, None)
 
     mach_placeholders = ",".join(["?"] * len(mach_candidates))
     time_expr = f"TRY_CAST({time_col} AS TIMESTAMP)"
@@ -484,7 +671,7 @@ def compute_cgrs_controlled_analysis_data(
                 f"{time_expr} < ?::TIMESTAMP"
             ]
             cnt_params = list(mach_candidates) + [str(t_start), str(t_end)]
-            if not is_cu and article and article.strip():
+            if article and article.strip():
                 art_clean = article.strip()
                 prefix7 = art_clean[:7]
                 cnt_where.append("(article10 = ? OR article10 LIKE ?)")
@@ -532,10 +719,22 @@ def compute_cgrs_controlled_analysis_data(
 
         group_params_list = list(group_params_map.values())
 
-        # 界定边界 t_prev 与 t_next
+        # 界定边界 t_prev 与 t_next (优先从全量调参时间线定位物理生效区间，严格不越界)
+        t_prev = None
+        t_next = None
+        for t_item in all_timestamps:
+            if t_item < start_ts and (start_ts - t_item).total_seconds() > 300:
+                t_prev = t_item
+            elif t_item > end_ts and (t_item - end_ts).total_seconds() > 300:
+                if t_next is None:
+                    t_next = t_item
+                    break
+        # 若历史库未扫出，再参考当前合并组相邻组边界
         orig_idx = tot_groups - 1 - g_idx
-        t_prev = merged_groups[orig_idx - 1][-1]["timestamp"] if orig_idx > 0 else None
-        t_next = merged_groups[orig_idx + 1][0]["timestamp"] if orig_idx < tot_groups - 1 else None
+        if not t_prev and orig_idx > 0:
+            t_prev = merged_groups[orig_idx - 1][-1]["timestamp"]
+        if not t_next and orig_idx < tot_groups - 1:
+            t_next = merged_groups[orig_idx + 1][0]["timestamp"]
 
         # 查找流经该机台的所有对照组组合路径
         if is_cu:
@@ -557,9 +756,16 @@ def compute_cgrs_controlled_analysis_data(
             if t_prev:
                 combo_where.append(f"{time_expr} >= ?::TIMESTAMP")
                 combo_params.append(t_prev)
+            else:
+                combo_where.append(f"{time_expr} >= ?::TIMESTAMP - INTERVAL 7 DAY")
+                combo_params.append(start_ts)
+
             if t_next:
                 combo_where.append(f"{time_expr} < ?::TIMESTAMP")
                 combo_params.append(t_next)
+            else:
+                combo_where.append(f"{time_expr} < ?::TIMESTAMP + INTERVAL 7 DAY")
+                combo_params.append(end_ts)
 
             combo_sql = f"""
                 SELECT DISTINCT 
@@ -588,9 +794,16 @@ def compute_cgrs_controlled_analysis_data(
             if t_prev:
                 combo_where.append(f"{time_expr} >= ?::TIMESTAMP")
                 combo_params.append(t_prev)
+            else:
+                combo_where.append(f"{time_expr} >= ?::TIMESTAMP - INTERVAL 7 DAY")
+                combo_params.append(start_ts)
+
             if t_next:
                 combo_where.append(f"{time_expr} < ?::TIMESTAMP")
                 combo_params.append(t_next)
+            else:
+                combo_where.append(f"{time_expr} < ?::TIMESTAMP + INTERVAL 7 DAY")
+                combo_params.append(end_ts)
 
             combo_sql = f"""
                 SELECT DISTINCT 
@@ -636,17 +849,19 @@ def compute_cgrs_controlled_analysis_data(
                 path_base_where += " AND TRY_CAST(tu_first_loc_timestamp AS DATE) = ?::DATE"
                 path_base_params.append(date)
 
-            # 1. 调参前样本 (Before)：向前最多 limit_per_path 条，只取 start_ts 之前的样本
+            # 1. 调参前样本 (Before)：向前最多 limit_per_path 条，只取 start_ts 之前的样本，严格不越过上一批调参生效边界 t_prev
             BEFORE_FETCH_LIMIT = limit_per_path
             before_conds = [
                 f"{time_expr} < ?::TIMESTAMP",
-                f"{time_expr} IS NOT NULL",
-                f"{time_expr} >= ?::TIMESTAMP - INTERVAL 1 DAY"
+                f"{time_expr} IS NOT NULL"
             ]
-            before_params = list(path_base_params) + [start_ts, start_ts]
+            before_params = list(path_base_params) + [start_ts]
             if t_prev:
                 before_conds.append(f"{time_expr} >= ?::TIMESTAMP")
                 before_params.append(t_prev)
+            else:
+                before_conds.append(f"{time_expr} >= ?::TIMESTAMP - INTERVAL 7 DAY")
+                before_params.append(start_ts)
 
             sql_before = f"""
                 SELECT
@@ -693,16 +908,18 @@ def compute_cgrs_controlled_analysis_data(
                     for idx, r in enumerate(rows_trans) if r.get('val') is not None
                 ]
 
-            # 3. 调参后样本 (After)：向后最多 30 条，只取 end_ts 之后的样本
+            # 3. 调参后样本 (After)：向后最多 limit_per_path 条，只取 end_ts 之后的样本，严格不越过下一批调参生效边界 t_next
             after_conds = [
                 f"{time_expr} >= ?::TIMESTAMP",
-                f"{time_expr} IS NOT NULL",
-                f"{time_expr} < ?::TIMESTAMP + INTERVAL 1 DAY"
+                f"{time_expr} IS NOT NULL"
             ]
-            after_params = list(path_base_params) + [end_ts, end_ts]
+            after_params = list(path_base_params) + [end_ts]
             if t_next:
                 after_conds.append(f"{time_expr} < ?::TIMESTAMP")
                 after_params.append(t_next)
+            else:
+                after_conds.append(f"{time_expr} < ?::TIMESTAMP + INTERVAL 7 DAY")
+                after_params.append(end_ts)
 
             sql_after = f"""
                 SELECT
@@ -830,14 +1047,13 @@ def compute_cgrs_controlled_analysis_data(
             eff_before_vals = []
             eff_after_vals = []
             try:
-                # 调参前最多 50 条
+                # 调参前最多 50 条 (严格在 [t_prev, start_ts) 边界内)
                 fb_before_where = [
                     f"{wc_col} IN ({mach_placeholders})",
                     f"{ind_col} IS NOT NULL",
-                    f"{time_expr} < ?::TIMESTAMP",
-                    f"{time_expr} >= ?::TIMESTAMP - INTERVAL 2 DAY"
+                    f"{time_expr} < ?::TIMESTAMP"
                 ]
-                fb_params_b = list(mach_candidates) + [start_ts, start_ts]
+                fb_params_b = list(mach_candidates) + [start_ts]
                 if article and article.strip():
                     art_clean = article.strip()
                     prefix7 = art_clean[:7]
@@ -846,6 +1062,9 @@ def compute_cgrs_controlled_analysis_data(
                 if t_prev:
                     fb_before_where.append(f"{time_expr} >= ?::TIMESTAMP")
                     fb_params_b.append(t_prev)
+                else:
+                    fb_before_where.append(f"{time_expr} >= ?::TIMESTAMP - INTERVAL 7 DAY")
+                    fb_params_b.append(start_ts)
                 
                 sql_fb_b = f"""
                     SELECT {ind_col} as val
@@ -857,14 +1076,13 @@ def compute_cgrs_controlled_analysis_data(
                 rows_fb_b = qry(sql_fb_b, fb_params_b)
                 eff_before_vals = [float(r['val']) for r in rows_fb_b if r.get('val') is not None]
 
-                # 调参后最多 50 条
+                # 调参后最多 50 条 (严格在 [end_ts, t_next) 边界内)
                 fb_after_where = [
                     f"{wc_col} IN ({mach_placeholders})",
                     f"{ind_col} IS NOT NULL",
-                    f"{time_expr} >= ?::TIMESTAMP",
-                    f"{time_expr} < ?::TIMESTAMP + INTERVAL 2 DAY"
+                    f"{time_expr} >= ?::TIMESTAMP"
                 ]
-                fb_params_a = list(mach_candidates) + [end_ts, end_ts]
+                fb_params_a = list(mach_candidates) + [end_ts]
                 if article and article.strip():
                     art_clean = article.strip()
                     prefix7 = art_clean[:7]
@@ -873,6 +1091,9 @@ def compute_cgrs_controlled_analysis_data(
                 if t_next:
                     fb_after_where.append(f"{time_expr} < ?::TIMESTAMP")
                     fb_params_a.append(t_next)
+                else:
+                    fb_after_where.append(f"{time_expr} < ?::TIMESTAMP + INTERVAL 7 DAY")
+                    fb_params_a.append(end_ts)
 
                 sql_fb_a = f"""
                     SELECT {ind_col} as val
@@ -1122,13 +1343,14 @@ ALLOWED_WORKCENTER_COLS = {
 
 def get_cgrs_controlled_analysis(
     workcenter: str,
-    date: str,
+    date: Optional[str] = None,
     article: Optional[str] = None,
     indicator: str = "rfpp",
     top_machines: Optional[str] = None,
     same_day_only: bool = False,
     limit_per_path: int = 20,
-    min_samples_threshold: int = 1
+    min_samples_threshold: int = 1,
+    event_time: Optional[str] = None
 ):
     try:
         return compute_cgrs_controlled_analysis_data(
@@ -1138,8 +1360,9 @@ def get_cgrs_controlled_analysis(
             indicator=indicator,
             top_machines=top_machines,
             same_day_only=same_day_only,
-            limit_per_path=20,
-            min_samples_threshold=1
+            limit_per_path=limit_per_path,
+            min_samples_threshold=min_samples_threshold,
+            event_time=event_time
         )
     except Exception as e:
         import traceback
@@ -1155,6 +1378,282 @@ def get_cgrs_controlled_analysis(
         }
 
 
+def _eval_machine_cgrs_strictly_plan_b(
+    target_mach: str,
+    article10: str,
+    ref_date_str: str,
+    indicator_name: str,
+    is_curing: bool
+) -> Optional[Dict[str, Any]]:
+    """
+    针对单台机台执行过去 30 天严密 CGRS 控制变量窗口评估与方案 B 选拔:
+    1. 封闭样本时间窗口 [t_prev, start_ts) 与 [end_ts, min(t_next, ref_date 23:59:59))，绝不跨相邻调参生效区
+    2. 5分钟微调聚类 + 相邻 < 15 胎连续震荡微调合并 (同参数取最早 From ➔ 最新 To)
+    3. 方案 B 选拔: 在正向改善 (diff > 0 且 改后样本 >= 5) 中，按改后绝对水平最高 (cpk_after DESC, diff DESC) 锁定黄金方案
+    """
+    try:
+        spec_prefix7 = article10[:7] if len(article10) >= 7 else article10
+        spec_cfg = INDICATORS_SPEC.get(indicator_name, INDICATORS_SPEC["rfpp"])
+        ind_col = f"TRY_CAST({spec_cfg['col']} AS DOUBLE)"
+        usl, lsl = get_spec_limits(article10, indicator_name) if article10 else (None, None)
+
+        candidates = [target_mach]
+        if is_curing:
+            clean_wc_col = "ct_workcenter"
+            clean_time_col = "ct_loc_timestamp"
+            if target_mach.startswith("CU") and not target_mach.startswith("CUG"):
+                candidates.append(f"CUG{target_mach[2:]}")
+            elif target_mach.startswith("CUG"):
+                candidates.append(f"CU{target_mach[3:]}")
+            spec_filter_cgrs = f"AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = '{spec_prefix7}' OR CAST(MaterialMasterID AS VARCHAR) LIKE '%{spec_prefix7}%')"
+        else:
+            clean_wc_col = "gt_workcenter"
+            clean_time_col = "gt_loc_timestamp"
+            if target_mach.startswith("TB2"):
+                candidates.append(f"TB1{target_mach[3:]}")
+            elif target_mach.startswith("TB1"):
+                candidates.append(f"TB2{target_mach[3:]}")
+            spec_filter_cgrs = f"AND (ProdSpecific2 = '{article10}' OR ProdSpecific2 LIKE '{spec_prefix7}%')"
+
+        cands_sql = "', '".join(candidates)
+
+        sql_cgrs = f"""
+            SELECT
+                event_timestamp,
+                TechOffsetHistoryLocalDate,
+                Workcenter,
+                ParameterLocalName,
+                ParameterName,
+                ParameterValue,
+                TechOffsetHistoryValueFrom,
+                TechOffsetHistoryValueTo,
+                TechOffsetValue,
+                ParameterUnitSymbol,
+                Priority,
+                UserName
+            FROM cgrs_records
+            WHERE Workcenter IN ('{cands_sql}')
+              AND TRY_CAST(event_timestamp AS DATE) <= '{ref_date_str}'::DATE
+              AND TRY_CAST(event_timestamp AS DATE) >= ('{ref_date_str}'::DATE - INTERVAL 30 DAY)
+              {spec_filter_cgrs}
+            ORDER BY event_timestamp ASC
+        """
+        raw_rows = qry(sql_cgrs)
+        if not raw_rows:
+            return None
+
+        # 1. 5分钟微调聚类
+        clustered = []
+        for r in raw_rows:
+            ts = r.get('event_timestamp')
+            if not ts:
+                continue
+            matched = None
+            for c in clustered:
+                if abs((ts - c['timestamp']).total_seconds()) <= 300:
+                    matched = c
+                    break
+            
+            p_val = float(r.get('ParameterValue') or 0.0)
+            v_from = float(r.get('TechOffsetHistoryValueFrom') or 0.0)
+            v_to = float(r.get('TechOffsetHistoryValueTo') or r.get('TechOffsetValue') or 0.0)
+            
+            p_info = {
+                "ParameterName": r.get('ParameterName'),
+                "ParameterLocalName": r.get('ParameterLocalName') or r.get('ParameterName'),
+                "ParameterValue": p_val,
+                "TechOffsetHistoryValueFrom": v_from,
+                "TechOffsetHistoryValueTo": v_to,
+                "final_value": round(p_val + v_to, 4),
+                "ParameterUnitSymbol": r.get('ParameterUnitSymbol') or "",
+                "Priority": r.get('Priority') or 3,
+                "UserName": r.get('UserName') or "工艺员",
+                "event_time": str(r.get('TechOffsetHistoryLocalDate') or ts)
+            }
+            if matched:
+                matched['params'].append(p_info)
+            else:
+                clustered.append({
+                    "timestamp": ts,
+                    "date_str": str(r.get('TechOffsetHistoryLocalDate') or ts),
+                    "params": [p_info]
+                })
+
+        # 2. 相邻两次调参生产样本 < 15 胎合并 (防止频繁震荡微调)
+        merged_groups = []
+        curr_group = []
+        for ev in clustered:
+            if not curr_group:
+                curr_group.append(ev)
+            else:
+                prev_ts = curr_group[-1]['timestamp']
+                curr_ts = ev['timestamp']
+                cnt_sql = f"""
+                    SELECT COUNT(*) as cnt FROM clean_yield
+                    WHERE {clean_wc_col} IN ('{cands_sql}')
+                      AND article10 LIKE '{spec_prefix7}%'
+                      AND TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{prev_ts}'::TIMESTAMP
+                      AND TRY_CAST({clean_time_col} AS TIMESTAMP) < '{curr_ts}'::TIMESTAMP
+                """
+                cnt_res = qry(cnt_sql)
+                cnt = cnt_res[0]['cnt'] if cnt_res else 0
+                if cnt < 15:
+                    curr_group.append(ev)
+                else:
+                    merged_groups.append(curr_group)
+                    curr_group = [ev]
+        if curr_group:
+            merged_groups.append(curr_group)
+
+        # 3. 严格封闭窗口 CGRS 评估
+        scored_events = []
+        tot_g = len(merged_groups)
+        ref_limit_dt = datetime.strptime(f"{ref_date_str} 23:59:59", "%Y-%m-%d %H:%M:%S")
+
+        for idx, g in enumerate(merged_groups):
+            start_ts = g[0]['timestamp']
+            end_ts = g[-1]['timestamp']
+            t_prev = merged_groups[idx - 1][-1]['timestamp'] if idx > 0 else None
+            t_next = merged_groups[idx + 1][0]['timestamp'] if idx < tot_g - 1 else None
+
+            # 改前样本窗口 [t_prev, start_ts)
+            sql_b_where = [
+                f"{clean_wc_col} IN ('{cands_sql}')",
+                f"article10 LIKE '{spec_prefix7}%'",
+                f"TRY_CAST({clean_time_col} AS TIMESTAMP) < '{start_ts}'::TIMESTAMP"
+            ]
+            if t_prev:
+                sql_b_where.append(f"TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{t_prev}'::TIMESTAMP")
+            sql_b = f"SELECT {ind_col} as val FROM clean_yield WHERE {' AND '.join(sql_b_where)} ORDER BY {clean_time_col} DESC LIMIT 50"
+            vals_b = [float(x['val']) for x in qry(sql_b) if x.get('val') is not None]
+
+            # 改后样本窗口 [end_ts, min(t_next, ref_limit_dt))
+            next_limit = min(t_next, ref_limit_dt) if t_next else ref_limit_dt
+            sql_a_where = [
+                f"{clean_wc_col} IN ('{cands_sql}')",
+                f"article10 LIKE '{spec_prefix7}%'",
+                f"TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{end_ts}'::TIMESTAMP",
+                f"TRY_CAST({clean_time_col} AS TIMESTAMP) <= '{next_limit}'::TIMESTAMP"
+            ]
+            sql_a = f"SELECT {ind_col} as val FROM clean_yield WHERE {' AND '.join(sql_a_where)} ORDER BY {clean_time_col} ASC LIMIT 50"
+            vals_a = [float(x['val']) for x in qry(sql_a) if x.get('val') is not None]
+
+            cpk_b = calc_cpk(float(np.mean(vals_b)), float(np.std(vals_b, ddof=1)), usl, lsl) if len(vals_b) > 1 else None
+            cpk_a = calc_cpk(float(np.mean(vals_a)), float(np.std(vals_a, ddof=1)), usl, lsl) if len(vals_a) > 1 else None
+            diff = (cpk_a - cpk_b) if (cpk_a is not None and cpk_b is not None) else None
+
+            # 同参数吸收合并 (取最早 From ➔ 最新 To)
+            p_map = {}
+            for ev_item in g:
+                for p in ev_item['params']:
+                    p_k = p['ParameterName'] or p['ParameterLocalName']
+                    if p_k not in p_map:
+                        p_map[p_k] = dict(p)
+                    else:
+                        p_map[p_k]['TechOffsetHistoryValueTo'] = p['TechOffsetHistoryValueTo']
+                        p_map[p_k]['final_value'] = p['final_value']
+
+            scored_events.append({
+                "machine": target_mach,
+                "event_time": str(g[-1]['date_str'])[:16],
+                "nb": len(vals_b),
+                "na": len(vals_a),
+                "cpk_b": round(cpk_b, 3) if cpk_b else None,
+                "cpk_a": round(cpk_a, 3) if cpk_a else None,
+                "diff": round(diff, 3) if diff else None,
+                "params": list(p_map.values())
+            })
+
+        # 4. 方案 B 黄金方案选拔 (正向改善 diff > 0 且 改后样本 >= 5，优先改后 CPK 最高)
+        improved = [
+            e for e in scored_events 
+            if e['diff'] is not None and e['diff'] > 0 and e['na'] >= 5 and e['cpk_a'] is not None
+        ]
+        if improved:
+            improved.sort(key=lambda x: (x['cpk_a'], x['diff']), reverse=True)
+            return improved[0]
+        return None
+    except Exception as e:
+        print(f"Error evaluating machine CGRS {target_mach}: {e}")
+        return None
+
+
+def _get_machine_current_param_offsets(machine: str, ref_date_str: str, is_curing: bool, article10: Optional[str] = None) -> Dict[str, float]:
+    """获取机台在观察基准日当前最近一次生效的偏置值快照 (机台 + 规格 + 时间 三元匹配)"""
+    candidates = [machine]
+    if is_curing:
+        if machine.startswith("CU") and not machine.startswith("CUG"):
+            candidates.append(f"CUG{machine[2:]}")
+        elif machine.startswith("CUG"):
+            candidates.append(f"CU{machine[3:]}")
+    else:
+        if machine.startswith("TB2"):
+            candidates.append(f"TB1{machine[3:]}")
+        elif machine.startswith("TB1"):
+            candidates.append(f"TB2{machine[3:]}")
+    cands_sql = "', '".join(candidates)
+
+    spec_cond = ""
+    if article10 and article10.strip():
+        spec_prefix7 = article10.strip()[:7]
+        if is_curing:
+            spec_cond = f"AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = '{spec_prefix7}' OR CAST(MaterialMasterID AS VARCHAR) LIKE '%{spec_prefix7}%')"
+        else:
+            spec_cond = f"AND (ProdSpecific2 = '{article10.strip()}' OR ProdSpecific2 LIKE '{spec_prefix7}%')"
+
+    sql = f"""
+        SELECT 
+            ParameterName,
+            ParameterLocalName,
+            ParameterValue,
+            TechOffsetHistoryValueTo,
+            TechOffsetValue,
+            event_timestamp
+        FROM cgrs_records
+        WHERE Workcenter IN ('{cands_sql}')
+          AND TRY_CAST(event_timestamp AS TIMESTAMP) <= '{ref_date_str} 23:59:59'::TIMESTAMP
+          {spec_cond}
+        ORDER BY event_timestamp DESC
+    """
+    rows = qry(sql)
+    curr_map = {}
+    for r in rows:
+        p_name = r.get('ParameterName')
+        p_local = r.get('ParameterLocalName')
+        off_to = float(r.get('TechOffsetHistoryValueTo') or r.get('TechOffsetValue') or 0.0)
+        if p_name and p_name not in curr_map:
+            curr_map[p_name] = off_to
+        if p_local and p_local not in curr_map:
+            curr_map[p_local] = off_to
+
+    # 若成型特定规格未查到偏置，回退到机台通用偏置（CU 硫化工序严禁跨规格混用）
+    if not curr_map and spec_cond and not is_curing:
+        sql_fallback = f"""
+            SELECT 
+                ParameterName,
+                ParameterLocalName,
+                ParameterValue,
+                TechOffsetHistoryValueTo,
+                TechOffsetValue,
+                event_timestamp
+            FROM cgrs_records
+            WHERE Workcenter IN ('{cands_sql}')
+              AND TRY_CAST(event_timestamp AS TIMESTAMP) <= '{ref_date_str} 23:59:59'::TIMESTAMP
+            ORDER BY event_timestamp DESC
+        """
+        rows_fb = qry(sql_fallback)
+        for r in rows_fb:
+            p_name = r.get('ParameterName')
+            p_local = r.get('ParameterLocalName')
+            off_to = float(r.get('TechOffsetHistoryValueTo') or r.get('TechOffsetValue') or 0.0)
+            if p_name and p_name not in curr_map:
+                curr_map[p_name] = off_to
+            if p_local and p_local not in curr_map:
+                curr_map[p_local] = off_to
+
+    return curr_map
+
+
 def get_cgrs_recommended_params(
     machine: str,
     article10: str,
@@ -1163,354 +1662,142 @@ def get_cgrs_recommended_params(
     target_date: Optional[str] = None,
     reason: str = "degradation"
 ):
+    """
+    智能机台调参推荐核心服务 (严格复用 CGRS 计算窗口 + 方案 B 黄金方案选拔 + 全0自动跨机台穿透)
+    """
     try:
         ref_date = target_date.strip() if target_date and target_date.strip() else datetime.now().strftime('%Y-%m-%d')
         spec_prefix7 = article10[:7] if len(article10) >= 7 else article10
-
         is_cu = machine.startswith("CU") or machine.startswith("CT") or workcenter_type.lower() in ("ct", "cu")
-        
-        # 严格限制工段隔绝，绝对不跨工段 (硫化只用硫化机参数，成型只用成型机参数)
-        if is_cu:
-            clean_wc_col = "ct_workcenter"
-            clean_time_col = "ct_loc_timestamp"
-            stage_name_cn = "硫化 CT"
+        stage_name_cn = "硫化 CT" if is_cu else "成型 GT"
+
+        # 1. 第一阶段：严密评估本机台过去 30 天方案 B 黄金调参事件
+        same_best = _eval_machine_cgrs_strictly_plan_b(
+            target_mach=machine,
+            article10=article10,
+            ref_date_str=ref_date,
+            indicator_name=indicator,
+            is_curing=is_cu
+        )
+
+        # 获取本机当前偏置快照 (机台 + 规格 + 时间)
+        curr_offsets = _get_machine_current_param_offsets(machine, ref_date, is_cu, article10)
+
+        # 判断本机台是否与推荐方案完全一致 (全 0 变化判定)
+        is_same_all_zero = True
+        if same_best and same_best.get('params'):
+            for p in same_best['params']:
+                p_code = p.get('ParameterName')
+                p_local = p.get('ParameterLocalName')
+                rec_to = float(p.get('TechOffsetHistoryValueTo') or 0.0)
+                curr_to = curr_offsets.get(p_code, curr_offsets.get(p_local, 0.0))
+                if abs(rec_to - curr_to) >= 0.0001:
+                    is_same_all_zero = False
+                    break
         else:
-            stage_wc_cond = "(Workcenter LIKE 'TB%' OR Workcenter LIKE 'GT%')"
-            clean_wc_col = "gt_workcenter"
-            clean_time_col = "gt_loc_timestamp"
-            stage_name_cn = "成型 GT"
-            # 成型机在 cgrs_records 中通过 ProdSpecific2 绑定规格 (只匹配全规格或前 7 位，完全不进行前 5 位模糊匹配)
-            spec_cond_cgrs_p7 = f"(ProdSpecific2 = '{article10}' OR ProdSpecific2 LIKE '{spec_prefix7}%')"
-
-        col_field = "rfppwc_first" if indicator == "rfpp" else ("rfh1wc_first" if indicator == "rfh1" else "cony_first")
-        ind_col = f"TRY_CAST({col_field} AS DOUBLE)"
-        usl, lsl = get_spec_limits(article10, indicator) if article10 else (100.0, None)
-
-        candidates = [machine]
-        if machine.startswith("TB2"):
-            candidates.append(f"TB1{machine[3:]}")
-        elif machine.startswith("TB1"):
-            candidates.append(f"TB2{machine[3:]}")
-        elif machine.startswith("CU") and not machine.startswith("CUG"):
-            candidates.append(f"CUG{machine[2:]}")
-        elif machine.startswith("CUG"):
-            candidates.append(f"CU{machine[3:]}")
-        cands_in = "', '".join(candidates)
-
-        def eval_event_improvement(wc, ev_time_str):
-            wc_cands = [wc]
-            if wc.startswith("TB2"):
-                wc_cands.append(f"TB1{wc[3:]}")
-                wc_cands.append(f"TB{wc[3:]}")
-            elif wc.startswith("TB1"):
-                wc_cands.append(f"TB2{wc[3:]}")
-                wc_cands.append(f"TB{wc[3:]}")
-            elif wc.startswith("CU") and not wc.startswith("CUG"):
-                wc_cands.append(f"CUG{wc[2:]}")
-            elif wc.startswith("CUG"):
-                wc_cands.append(f"CU{wc[3:]}")
-            wc_in = "', '".join(wc_cands)
-
-            spec_cond = f"AND article10 LIKE '{spec_prefix7}%'"
-
-            sql_b = f"""
-                SELECT {ind_col} as val
-                FROM clean_yield
-                WHERE {clean_wc_col} IN ('{wc_in}')
-                  {spec_cond}
-                  AND TRY_CAST({clean_time_col} AS TIMESTAMP) < '{ev_time_str}'::TIMESTAMP
-                ORDER BY {clean_time_col} DESC
-                LIMIT 50
-            """
-            vals_b = [float(x['val']) for x in qry(sql_b) if x.get('val') is not None]
-
-            sql_a = f"""
-                SELECT {ind_col} as val
-                FROM clean_yield
-                WHERE {clean_wc_col} IN ('{wc_in}')
-                  {spec_cond}
-                  AND TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{ev_time_str}'::TIMESTAMP
-                  AND TRY_CAST({clean_time_col} AS TIMESTAMP) <= '{ref_date} 23:59:59'::TIMESTAMP
-                ORDER BY {clean_time_col} ASC
-                LIMIT 50
-            """
-            vals_a = [float(x['val']) for x in qry(sql_a) if x.get('val') is not None]
-
-            cpk_b = calc_cpk(float(np.mean(vals_b)), float(np.std(vals_b, ddof=1)), usl, lsl) if len(vals_b) > 1 else None
-            cpk_a = calc_cpk(float(np.mean(vals_a)), float(np.std(vals_a, ddof=1)), usl, lsl) if len(vals_a) > 1 else None
-            diff = (cpk_a - cpk_b) if (cpk_a is not None and cpk_b is not None) else None
-            return cpk_b, cpk_a, diff
+            is_same_all_zero = True
 
         chosen_event = None
         source_type = "same_machine_best"
         source_mach = machine
         matched_spec_level = "exact"
+        is_optimal_no_diff = False
 
-        if not is_cu:
-            # ──────── 成型机 GT 推荐逻辑 ────────
-            # 1. 优先级 1: 优先在【同规格同机台】下检索 ref_date 前 30 天的历史调参版本
-            sql_same = f"""
-                SELECT 
-                    Workcenter,
-                    TechOffsetHistoryLocalDate as event_time,
-                    ParameterLocalName,
-                    ParameterName,
-                    TechOffsetHistoryValueFrom,
-                    TechOffsetHistoryValueTo,
-                    ParameterValue,
-                    ParameterUnitSymbol,
-                    Priority,
-                    UserName,
-                    ProdSpecific2
-                FROM cgrs_records
-                WHERE Workcenter IN ('{cands_in}')
-                  AND {spec_cond_cgrs_p7}
-                  AND TRY_CAST(event_timestamp AS DATE) <= '{ref_date}'::DATE
-                  AND TRY_CAST(event_timestamp AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
-                ORDER BY TechOffsetHistoryLocalDate DESC
-            """
-            rows_same = qry(sql_same)
-            if rows_same:
-                event_groups = {}
-                for r in rows_same:
-                    t_key = str(r.get('event_time', ''))[:16]
-                    if t_key not in event_groups:
-                        event_groups[t_key] = []
-                    event_groups[t_key].append(r)
-
-                scored_events = []
-                for t_str, p_list in event_groups.items():
-                    cb, ca, cdiff = eval_event_improvement(machine, t_str)
-                    scored_events.append({
-                        "source_machine": machine,
-                        "event_time": t_str,
-                        "cpk_b": cb,
-                        "cpk_a": ca,
-                        "diff": cdiff,
-                        "params": p_list
-                    })
-
-                improved = [e for e in scored_events if e['diff'] is not None and e['diff'] > 0]
-                if improved:
-                    improved.sort(key=lambda x: x['diff'], reverse=True)
-                    chosen_event = improved[0]
-                else:
-                    scored_events.sort(key=lambda x: (x['cpk_a'] is not None, x['cpk_a'] or -999.0), reverse=True)
-                    chosen_event = scored_events[0]
-
-            # 2. 优先级 2: 若本机台无同规格调参，或调参没有改善 -> 搜索【同工段同规格】生产该规格的其他机台 / 标杆机台 (完全不使用前五位)
-            if not chosen_event or (chosen_event.get('diff') is not None and chosen_event['diff'] <= 0):
-                sql_stage_producers = f"""
-                    SELECT DISTINCT {clean_wc_col} as wc
+        if same_best and not is_same_all_zero:
+            # 本机有有效改进空间：直接采用本机方案
+            chosen_event = same_best
+            source_type = "same_machine_best"
+            source_mach = machine
+        else:
+            # 2. 第二阶段：本机无正向调参 或 本机当前已稳定在历史最佳 (变化全为0) -> 自动启动同工段跨机台穿透
+            candidates = [machine]
+            if is_cu:
+                if machine.startswith("CU") and not machine.startswith("CUG"):
+                    candidates.append(f"CUG{machine[2:]}")
+                elif machine.startswith("CUG"):
+                    candidates.append(f"CU{machine[3:]}")
+                cands_sql = "', '".join(candidates)
+                sql_peers = f"""
+                    SELECT DISTINCT ct_workcenter as wc
                     FROM clean_yield
                     WHERE article10 LIKE '{spec_prefix7}%'
-                      AND {clean_wc_col} NOT IN ('{cands_in}')
+                      AND ct_workcenter IS NOT NULL AND ct_workcenter != ''
+                      AND ct_workcenter NOT IN ('{cands_sql}')
+                      AND TRY_CAST(ct_loc_timestamp AS DATE) <= '{ref_date}'::DATE
+                      AND TRY_CAST(ct_loc_timestamp AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
                 """
-                producers = [x['wc'] for x in qry(sql_stage_producers) if x.get('wc')]
-                prod_order_case = ""
-                if producers:
-                    p_in = "', '".join(producers)
-                    prod_order_case = f"CASE WHEN Workcenter IN ('{p_in}') THEN 0 ELSE 1 END,"
-
-                sql_stage_p7 = f"""
-                    SELECT 
-                        Workcenter,
-                        TechOffsetHistoryLocalDate as event_time,
-                        ParameterLocalName,
-                        ParameterName,
-                        TechOffsetHistoryValueFrom,
-                        TechOffsetHistoryValueTo,
-                        ParameterValue,
-                        ParameterUnitSymbol,
-                        Priority,
-                        UserName,
-                        ProdSpecific2
-                    FROM cgrs_records
-                    WHERE {stage_wc_cond}
-                      AND Workcenter NOT IN ('{cands_in}')
-                      AND {spec_cond_cgrs_p7}
-                      AND TRY_CAST(event_timestamp AS DATE) <= '{ref_date}'::DATE
-                      AND TRY_CAST(event_timestamp AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
-                    ORDER BY {prod_order_case} TechOffsetHistoryLocalDate DESC
-                    LIMIT 100
+            else:
+                if machine.startswith("TB2"):
+                    candidates.append(f"TB1{machine[3:]}")
+                elif machine.startswith("TB1"):
+                    candidates.append(f"TB2{machine[3:]}")
+                cands_sql = "', '".join(candidates)
+                sql_peers = f"""
+                    SELECT DISTINCT gt_workcenter as wc
+                    FROM clean_yield
+                    WHERE article10 LIKE '{spec_prefix7}%'
+                      AND gt_workcenter IS NOT NULL AND gt_workcenter != ''
+                      AND gt_workcenter NOT IN ('{cands_sql}')
+                      AND TRY_CAST(tu_first_shift_date AS DATE) <= '{ref_date}'::DATE
+                      AND TRY_CAST(tu_first_shift_date AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
                 """
-                rows_stage_p7 = qry(sql_stage_p7)
-                if rows_stage_p7:
-                    stage_groups = {}
-                    for r in rows_stage_p7:
-                        w = r.get('Workcenter')
-                        t = str(r.get('event_time', ''))[:16]
-                        k = (w, t)
-                        if k not in stage_groups:
-                            stage_groups[k] = []
-                        stage_groups[k].append(r)
 
-                    stage_scored = []
-                    for (w, t_str), p_list in stage_groups.items():
-                        cb, ca, cdiff = eval_event_improvement(w, t_str)
-                        stage_scored.append({
-                            "source_machine": w,
-                            "event_time": t_str,
-                            "cpk_b": cb,
-                            "cpk_a": ca,
-                            "diff": cdiff,
-                            "params": p_list
-                        })
-                    improved_stage = [e for e in stage_scored if e['diff'] is not None and e['diff'] > 0]
-                    if improved_stage:
-                        improved_stage.sort(key=lambda x: x['diff'], reverse=True)
-                        candidate_event = improved_stage[0]
-                    else:
-                        stage_scored.sort(key=lambda x: (x['cpk_a'] is not None, x['cpk_a'] or -999.0), reverse=True)
-                        candidate_event = stage_scored[0]
+            peer_machines = [r['wc'] for r in qry(sql_peers) if r.get('wc')]
+            peer_results = []
 
-                    if not chosen_event or (chosen_event.get('diff') or -999) < (candidate_event.get('diff') or -999):
-                        chosen_event = candidate_event
-                        source_type = "same_stage_best"
-                        source_mach = candidate_event['source_machine']
-                        matched_spec_level = "same_spec"
+            for p_mach in peer_machines:
+                p_res = _eval_machine_cgrs_strictly_plan_b(
+                    target_mach=p_mach,
+                    article10=article10,
+                    ref_date_str=ref_date,
+                    indicator_name=indicator,
+                    is_curing=is_cu
+                )
+                if p_res:
+                    peer_results.append(p_res)
 
-        else:
-            # ──────── 硫化机 CT 推荐逻辑 ────────
-            # 硫化机参数不与规格绑定，但每个规格生产的硫化机基本固定。
-            # 追溯该规格在历史上不同天的硫化机表现情况来进行参数推荐。
-            sql_fixed_ct = f"""
-                SELECT DISTINCT ct_workcenter as wc
-                FROM clean_yield
-                WHERE article10 LIKE '{spec_prefix7}%'
-                  AND ct_workcenter IS NOT NULL
-                  AND ct_workcenter != ''
-                  AND (ct_workcenter LIKE 'CU%' OR ct_workcenter LIKE 'CT%' OR ct_workcenter LIKE 'CUG%')
-                  AND TRY_CAST(ct_loc_timestamp AS DATE) <= '{ref_date}'::DATE
-            """
-            fixed_ct_rows = qry(sql_fixed_ct)
-            fixed_ct_machines = [r['wc'] for r in fixed_ct_rows if r.get('wc')]
+            if peer_results:
+                # 方案 B 决出全工段第一标杆机
+                peer_results.sort(key=lambda x: (x['cpk_a'], x['diff']), reverse=True)
+                top_peer = peer_results[0]
 
-            # Priority 1: 本机台在 past 30 days 内的调参记录 (不按规格过滤，因为硫化机调参不绑定规格)
-            # 追溯该机台在调参事件发生后，生产该规格的表现 (CPK)
-            sql_same_ct = f"""
-                SELECT 
-                    Workcenter,
-                    TechOffsetHistoryLocalDate as event_time,
-                    ParameterLocalName,
-                    ParameterName,
-                    TechOffsetHistoryValueFrom,
-                    TechOffsetHistoryValueTo,
-                    ParameterValue,
-                    ParameterUnitSymbol,
-                    Priority,
-                    UserName
-                FROM cgrs_records
-                WHERE Workcenter IN ('{cands_in}')
-                  AND TRY_CAST(event_timestamp AS DATE) <= '{ref_date}'::DATE
-                  AND TRY_CAST(event_timestamp AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
-                ORDER BY TechOffsetHistoryLocalDate DESC
-            """
-            rows_same_ct = qry(sql_same_ct)
-            if rows_same_ct:
-                event_groups = {}
-                for r in rows_same_ct:
-                    t_key = str(r.get('event_time', ''))[:16]
-                    if t_key not in event_groups:
-                        event_groups[t_key] = []
-                    event_groups[t_key].append(r)
+                # 检查标杆机参数与当前机台是否存在实际差异
+                is_peer_all_zero = True
+                for p in top_peer['params']:
+                    p_code = p.get('ParameterName')
+                    p_local = p.get('ParameterLocalName')
+                    rec_to = float(p.get('TechOffsetHistoryValueTo') or 0.0)
+                    curr_to = curr_offsets.get(p_code, curr_offsets.get(p_local, 0.0))
+                    if abs(rec_to - curr_to) >= 0.0001:
+                        is_peer_all_zero = False
+                        break
 
-                scored_events = []
-                for t_str, p_list in event_groups.items():
-                    cb, ca, cdiff = eval_event_improvement(machine, t_str)
-                    scored_events.append({
-                        "source_machine": machine,
-                        "event_time": t_str,
-                        "cpk_b": cb,
-                        "cpk_a": ca,
-                        "diff": cdiff,
-                        "params": p_list
-                    })
-
-                improved = [e for e in scored_events if e['diff'] is not None and e['diff'] > 0]
-                if improved:
-                    improved.sort(key=lambda x: x['diff'], reverse=True)
-                    chosen_event = improved[0]
+                if not is_peer_all_zero:
+                    # 跨机台存在差异：推荐全工段标杆机台参数
+                    chosen_event = top_peer
+                    source_type = "same_stage_best"
+                    source_mach = top_peer['machine']
+                    matched_spec_level = "fixed_spec_producer" if is_cu else "same_spec"
                 else:
-                    # 仅当本机台在该规格上有生产 CPK 数据时才采用
-                    valid_events = [e for e in scored_events if e['cpk_a'] is not None]
-                    if valid_events:
-                        valid_events.sort(key=lambda x: x['cpk_a'], reverse=True)
-                        chosen_event = valid_events[0]
-
-            # Priority 2: 生产该规格的其他固定硫化机在 past 30 days 内的调参记录
-            if not chosen_event or (chosen_event.get('diff') is not None and chosen_event['diff'] <= 0):
-                other_fixed = [m for m in fixed_ct_machines if m not in candidates]
-                if other_fixed:
-                    other_in = "', '".join(other_fixed)
-                    sql_other_ct = f"""
-                        SELECT 
-                            Workcenter,
-                            TechOffsetHistoryLocalDate as event_time,
-                            ParameterLocalName,
-                            ParameterName,
-                            TechOffsetHistoryValueFrom,
-                            TechOffsetHistoryValueTo,
-                            ParameterValue,
-                            ParameterUnitSymbol,
-                            Priority,
-                            UserName
-                        FROM cgrs_records
-                        WHERE Workcenter IN ('{other_in}')
-                          AND TRY_CAST(event_timestamp AS DATE) <= '{ref_date}'::DATE
-                          AND TRY_CAST(event_timestamp AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
-                        ORDER BY TechOffsetHistoryLocalDate DESC
-                        LIMIT 100
-                    """
-                    rows_other_ct = qry(sql_other_ct)
-                    if rows_other_ct:
-                        stage_groups = {}
-                        for r in rows_other_ct:
-                            w = r.get('Workcenter')
-                            t = str(r.get('event_time', ''))[:16]
-                            k = (w, t)
-                            if k not in stage_groups:
-                                stage_groups[k] = []
-                            stage_groups[k].append(r)
-
-                        stage_scored = []
-                        for (w, t_str), p_list in stage_groups.items():
-                            cb, ca, cdiff = eval_event_improvement(w, t_str)
-                            stage_scored.append({
-                                "source_machine": w,
-                                "event_time": t_str,
-                                "cpk_b": cb,
-                                "cpk_a": ca,
-                                "diff": cdiff,
-                                "params": p_list
-                            })
-
-                        improved_stage = [e for e in stage_scored if e['diff'] is not None and e['diff'] > 0]
-                        if improved_stage:
-                            improved_stage.sort(key=lambda x: x['diff'], reverse=True)
-                            candidate_event = improved_stage[0]
-                        else:
-                            valid_stage = [e for e in stage_scored if e['cpk_a'] is not None]
-                            if valid_stage:
-                                valid_stage.sort(key=lambda x: x['cpk_a'], reverse=True)
-                                candidate_event = valid_stage[0]
-                            else:
-                                candidate_event = stage_scored[0] if stage_scored else None
-
-                        if candidate_event:
-                            if not chosen_event or (chosen_event.get('diff') or -999) < (candidate_event.get('diff') or -999):
-                                chosen_event = candidate_event
-                                source_type = "same_stage_best"
-                                source_mach = candidate_event['source_machine']
-                                matched_spec_level = "fixed_spec_producer"
+                    # 跨机台比对后依然全为 0：说明当前机台已处于全工段最佳基准状态
+                    chosen_event = top_peer if (not same_best or top_peer['cpk_a'] > same_best['cpk_a']) else same_best
+                    source_type = "same_stage_best" if (chosen_event == top_peer) else "same_machine_best"
+                    source_mach = chosen_event['machine']
+                    is_optimal_no_diff = True
+            elif same_best:
+                # 兄弟机台无更好方案，退守本机历史最优
+                chosen_event = same_best
+                source_type = "same_machine_best"
+                source_mach = machine
+                is_optimal_no_diff = is_same_all_zero
 
         if not chosen_event:
             return {
                 "status": "success",
                 "has_recommendation": False,
                 "reason": reason,
-                "recommend_title": f"暂无【{stage_name_cn}】该规格历史参考调参数据",
-                "message": f"在观察日 [{ref_date}] 前 30 天内，同工段【{stage_name_cn}】暂无规格 [{article10}] 的工艺调参记录",
+                "recommend_title": f"未查询到【{stage_name_cn}】工艺调参修改记录",
+                "message": f"在观察日 [{ref_date}] 前 30 天内，未查询到生产规格 [{article10}] 带来质量改善的工艺调参修改记录。",
                 "params": []
             }
 
@@ -1526,25 +1813,12 @@ def get_cgrs_recommended_params(
             v_to = float(p.get("TechOffsetHistoryValueTo") or 0.0)
             d_val = round(v_to - v_from, 4)
             delta_str = f"{d_val:+.4f}".rstrip('0').rstrip('.') if '.' in f"{d_val:+.4f}" else f"{d_val:+}"
-            if delta_str == "+0" or delta_str == "-0":
+            if delta_str in ("+0", "-0"):
                 delta_str = "0"
 
             p_val = p.get("ParameterValue")
             unit_str = p.get("ParameterUnitSymbol") or ""
-
-            # 纯设定值轨迹：若有最终设定值，则改前设定值 = 设定值 - delta 偏置调整量
-            if p_val is not None:
-                try:
-                    f_to = float(p_val)
-                    f_from = round(f_to - d_val, 4)
-                    setting_from = fmt_num(f_from)
-                    setting_to = fmt_num(f_to)
-                except Exception:
-                    setting_from = fmt_num(v_from)
-                    setting_to = fmt_num(v_to)
-            else:
-                setting_from = fmt_num(v_from)
-                setting_to = fmt_num(v_to)
+            final_val = p.get("final_value") if p.get("final_value") is not None else (float(p_val or 0.0) + v_to)
 
             ev_time = str(p.get("event_time", "") or chosen_event['event_time'])[:19]
 
@@ -1555,9 +1829,9 @@ def get_cgrs_recommended_params(
                 "val_from": fmt_num(v_from),
                 "val_to": fmt_num(v_to),
                 "delta": delta_str,
-                "final_value": fmt_num(p_val),
-                "setting_from": setting_from,
-                "setting_to": setting_to,
+                "final_value": fmt_num(final_val),
+                "setting_from": fmt_num(float(p_val or 0.0) + v_from) if p_val is not None else fmt_num(v_from),
+                "setting_to": fmt_num(final_val),
                 "unit": unit_str,
                 "priority": p.get("Priority") or 3,
                 "operator": p.get("UserName") or "工艺员"
@@ -1570,12 +1844,15 @@ def get_cgrs_recommended_params(
 
         recommend_category = "same_machine" if source_type == "same_machine_best" else "cross_machine"
 
-        if source_type == "same_machine_best":
+        if is_optimal_no_diff:
+            rec_title = f"机台工艺参数已达到历史最佳基准 ({chosen_event['event_time']})"
+            rec_desc = f"比对本机台及同工段兄弟机台后，当前参数已与历史最佳水平 (CPK: {ca:.2f}) 保持一致，未查询到差异，建议维持现有稳定工艺。"
+        elif source_type == "same_machine_best":
             rec_title = f"建议复原至本机台 [{machine}] 历史最佳调参 ({chosen_event['event_time']})"
-            rec_desc = f"在观察日 [{ref_date}] 前 30 天内，本机台曾于 {chosen_event['event_time']} 进行工艺优化，调参后 CPK 提升至 {ca:.2f}（提升 {yoy:+.1f}%）。" if (ca and yoy) else (f"在观察日 [{ref_date}] 前 30 天内匹配到本机台调参版本，调参后 CPK 为 {ca:.2f}。" if ca else f"在观察日 [{ref_date}] 前 30 天内匹配到本机台优化调参版本。")
+            rec_desc = f"在观察日 [{ref_date}] 前 30 天内，本机台曾于 {chosen_event['event_time']} 进行工艺优化，调参后 CPK 达到 {ca:.2f}（提升 {yoy:+.1f}%）。" if (ca and yoy) else f"在观察日 [{ref_date}] 前 30 天内匹配到本机台优化调参版本。"
         else:
             rec_title = f"推荐参考生产该规格的标杆机台 [{source_mach}] 历史最佳参数 ({chosen_event['event_time']})"
-            rec_desc = f"本机台过去 30 天无有效提升调参，系统自动匹配到生产该规格的标杆机台 [{source_mach}] 最佳工艺设定，调参后该机台 CPK 提升至 {ca:.2f}。" if ca else f"匹配到生产该规格的标杆机台 [{source_mach}] 工艺设定。"
+            rec_desc = f"本机台当前参数已到位，系统为您自动穿透匹配到生产该规格的工段标杆机台 [{source_mach}] 最佳工艺设定，调参后该机台 CPK 达到 {ca:.2f}。"
 
         return sanitize_data({
             "status": "success",
@@ -1595,6 +1872,7 @@ def get_cgrs_recommended_params(
             "yoy_pct": yoy,
             "recommend_title": rec_title,
             "recommend_desc": rec_desc,
+            "is_optimal_no_diff": is_optimal_no_diff,
             "params": formatted_params
         })
     except Exception as e:

@@ -31,46 +31,48 @@ def get_watermark_from_parquet(base_parquet=None):
     """
     直接从本地/服务器已有的原始大宽表 Parquet 中极速计算最大终检日期 (MAX(tu_first_loc_timestamp))。
     为防止生产线跨班次或重测数据延迟，将拉取起点安全回退 1 天（MAX日期 - 1天）。
-    若大表不存在或为空，返回 None（自动触发全量 31 天拉取）。
+    若大表不存在或为空，自动尝试备用清洗表；若皆失败返回 None（自动触发全量 31 天拉取）。
     """
+    data_dir = get_data_dir()
     if base_parquet is None:
-        data_dir = get_data_dir()
-        base_parquet = os.path.join(data_dir, "yield_flat_table_joined_100.parquet")
-    
-    if not os.path.exists(base_parquet):
-        print(f"[Watermark] 本地基准大表不存在 ({base_parquet})，将执行全量拉取。")
-        return None
-    
-    try:
-        import duckdb
-        con = duckdb.connect()
-        existing_cols = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{base_parquet}') LIMIT 1").fetchall()]
-        time_field = "tu_first_loc_timestamp" if "tu_first_loc_timestamp" in existing_cols else ("tu_first_shift_date" if "tu_first_shift_date" in existing_cols else None)
-        
-        if not time_field:
-            print("[Watermark] 未找到有效的时间字段，将执行全量拉取。")
-            con.close()
-            return None
+        candidates = [
+            os.path.join(data_dir, "yield_flat_table_joined_100.parquet"),
+            os.path.join(data_dir, "yield_flat_table_joined_100_cleaned.parquet")
+        ]
+    else:
+        candidates = [base_parquet, os.path.join(data_dir, "yield_flat_table_joined_100_cleaned.parquet")]
 
-        res = con.execute(f"""
-            SELECT MAX(TRY_CAST({time_field} AS DATE)) as max_dt 
-            FROM read_parquet('{base_parquet}')
-            WHERE {time_field} IS NOT NULL
-        """).fetchone()
-        con.close()
-        
-        if not res or not res[0]:
-            print("[Watermark] 本地基准大表无有效日期记录，将执行全量拉取。")
-            return None
-        
-        max_dt = res[0]
-        safe_watermark_dt = max_dt - datetime.timedelta(days=1)
-        safe_watermark = safe_watermark_dt.strftime("%Y-%m-%d")
-        print(f"[Watermark] 大表当前最大日期: {max_dt.strftime('%Y-%m-%d')}，设定安全抽取起点 (回退1天): {safe_watermark}")
-        return safe_watermark
-    except Exception as e:
-        print(f"[Watermark Warning] 读取大表日期计算水位线失败 ({e})，将执行全量拉取。")
-        return None
+    import duckdb
+    for target in candidates:
+        if not os.path.exists(target):
+            continue
+        try:
+            con = duckdb.connect()
+            existing_cols = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{target}') LIMIT 1").fetchall()]
+            time_field = "tu_first_loc_timestamp" if "tu_first_loc_timestamp" in existing_cols else ("tu_first_shift_date" if "tu_first_shift_date" in existing_cols else None)
+            if not time_field:
+                con.close()
+                continue
+
+            res = con.execute(f"""
+                SELECT MAX(TRY_CAST({time_field} AS DATE)) as max_dt 
+                FROM read_parquet('{target}')
+                WHERE {time_field} IS NOT NULL
+            """).fetchone()
+            con.close()
+
+            if res and res[0]:
+                max_dt = res[0]
+                safe_watermark_dt = max_dt - datetime.timedelta(days=1)
+                safe_watermark = safe_watermark_dt.strftime("%Y-%m-%d")
+                print(f"[Watermark] 从 {os.path.basename(target)} 计算当前最大日期: {max_dt.strftime('%Y-%m-%d')}，设定安全抽取起点 (回退1天): {safe_watermark}")
+                return safe_watermark
+        except Exception as e:
+            print(f"[Watermark Warning] 读取 {os.path.basename(target)} 计算水位线失败 ({e})，尝试备用文件...")
+            continue
+
+    print("[Watermark] 未探测到有效的大表水位线，将执行全量拉取。")
+    return None
 
 # --- 加密/解密帮助函数 ---
 def xor_crypt(data: bytes, key: bytes) -> bytes:
@@ -108,22 +110,44 @@ def find_config_file(filename):
 
 def setup_config():
     print("\n--- Amazon Redshift 数据库连接配置初始化 ---")
-    server = input("请输入数据库服务器地址 (Server, e.g. xxx.redshift.amazonaws.com): ").strip()
+    secret_path = find_config_file("secret.key")
+    db_config_path = find_config_file("db_config.json")
+
+    default_server = ""
+    default_port = 5439
+    default_db = "mustangmaster"
+
+    if os.path.exists(db_config_path):
+        try:
+            with open(db_config_path, "r", encoding="utf-8") as f:
+                old_cfg = json.load(f)
+                default_server = old_cfg.get("server", default_server)
+                default_port = old_cfg.get("port", default_port)
+                default_db = old_cfg.get("database", default_db)
+        except Exception:
+            pass
+
+    prompt_server = f"请输入数据库服务器地址 (回车默认: {default_server}): " if default_server else "请输入数据库服务器地址 (Server, e.g. xxx.redshift.amazonaws.com): "
+    server_input = input(prompt_server).strip()
+    server = server_input if server_input else default_server
     if "://" in server:
         server = server.split("://", 1)[1]
     if ":" in server:
         server = server.split(":", 1)[0]
-    port_input = input("请输入端口号 (Port, 默认 5439): ").strip()
-    port = int(port_input) if port_input else 5439
-    database = input("请输入数据库名称 (Database, e.g. mustangmaster): ").strip()
+
+    prompt_port = f"请输入端口号 (回车默认: {default_port}): "
+    port_input = input(prompt_port).strip()
+    port = int(port_input) if port_input else default_port
+
+    prompt_db = f"请输入数据库名称 (回车默认: {default_db}): "
+    db_input = input(prompt_db).strip()
+    database = db_input if db_input else default_db
+
     user = input("请输入数据库用户名 (User): ").strip()
     password = input("请输入密码 (Password): ").strip()
     
     import secrets
     key = secrets.token_hex(16)
-    
-    secret_path = find_config_file("secret.key")
-    db_config_path = find_config_file("db_config.json")
     
     os.makedirs(os.path.dirname(secret_path), exist_ok=True)
     os.makedirs(os.path.dirname(db_config_path), exist_ok=True)
@@ -154,7 +178,14 @@ def format_chunk(df_chunk):
         if col in df_chunk.columns:
             df_chunk[col] = pd.to_datetime(df_chunk[col], errors="coerce")
     
-    numeric_cols = ["loadindexsingle", "standard_rfpp", "standard_rfh1", "ss_value", "rfppwc_first", "rfh1wc_first"]
+    numeric_cols = [
+        "loadindexsingle", "standard_rfpp", "standard_rfh1", "ss_value",
+        "rfppwc_first", "rfh1wc_first", "rfh2wc_first", "lfppwc_first", "lfh1wc_first",
+        "cony_first", "plys_first",
+        "tbalw_first", "bbalw_first", "sbalw_first",
+        "bbul_first", "bdep_first", "blro_first", "crro_first",
+        "tbul_first", "tdep_first", "tlro_first"
+    ]
     for col in numeric_cols:
         for col_name in df_chunk.columns:
             if col_name.lower() == col:
@@ -170,7 +201,14 @@ def format_chunk(df_chunk):
 
 def build_arrow_schema(df_chunk):
     fields = []
-    numeric_cols = ["loadindexsingle", "standard_rfpp", "standard_rfh1", "ss_value", "rfppwc_first", "rfh1wc_first"]
+    numeric_cols = [
+        "loadindexsingle", "standard_rfpp", "standard_rfh1", "ss_value",
+        "rfppwc_first", "rfh1wc_first", "rfh2wc_first", "lfppwc_first", "lfh1wc_first",
+        "cony_first", "plys_first",
+        "tbalw_first", "bbalw_first", "sbalw_first",
+        "bbul_first", "bdep_first", "blro_first", "crro_first",
+        "tbul_first", "tdep_first", "tlro_first"
+    ]
     date_cols = ["tu_first_loc_timestamp", "ct_shiftdate", "last_modified_utc_timestamp"]
     for col in df_chunk.columns:
         if col in date_cols:
@@ -181,155 +219,8 @@ def build_arrow_schema(df_chunk):
             fields.append(pa.field(col, pa.string()))
     return pa.schema(fields)
 
-CREATE_TEMP_TABLE_SQL = """
-DROP TABLE IF EXISTS tmp_dil_article_standard;
-
-CREATE TEMP TABLE tmp_dil_article_standard
-DISTSTYLE ALL
-SORTKEY (articleid)
-AS
-WITH base AS
-(
-    SELECT
-        articleid,
-        articleno,
-        articlevariant,
-        specissue,
-        greentiregutsid,
-        branddesignation,
-        loadindexsingle,
-        speedsymbol,
-        ssr,
-
-        CASE UPPER(TRIM(speedsymbol))
-            WHEN 'L'   THEN 120
-            WHEN 'M'   THEN 130
-            WHEN 'N'   THEN 140
-            WHEN 'P'   THEN 150
-            WHEN 'Q'   THEN 160
-            WHEN 'R'   THEN 170
-            WHEN 'S'   THEN 180
-            WHEN 'T'   THEN 190
-            WHEN 'U'   THEN 200
-            WHEN 'H'   THEN 210
-            WHEN 'V'   THEN 240
-            WHEN 'W'   THEN 270
-            WHEN 'Y'   THEN 300
-            WHEN '(Y)' THEN 301
-            WHEN 'ZR'  THEN 241
-            WHEN '(Y'  THEN 301
-            WHEN '(V'  THEN 241
-            ELSE NULL
-        END AS ss_value
-
-    FROM stg_he.stg_dil_article
-),
-
-judgement AS
-(
-    SELECT
-        articleid,
-        articleno,
-        articlevariant,
-        specissue,
-        greentiregutsid,
-        branddesignation,
-        loadindexsingle,
-        speedsymbol,
-        ssr,
-
-        CASE
-
-            WHEN UPPER(TRIM(COALESCE(branddesignation,''))) = 'CONTINENTAL'
-                 AND
-                 (
-                    (
-                        loadindexsingle > 104
-                        AND loadindexsingle <= 111
-                        AND ss_value <= 210
-                    )
-                    OR
-                    (
-                        UPPER(TRIM(COALESCE(ssr::text,''))) = 'SSR'
-                        AND loadindexsingle > 104
-                    )
-                 )
-            THEN 'GROUP 2A'
-
-            WHEN UPPER(TRIM(COALESCE(branddesignation,''))) = 'CONTINENTAL'
-                 AND
-                 (
-                    loadindexsingle <= 104
-                    OR
-                    (
-                        loadindexsingle > 104
-                        AND ss_value > 210
-                    )
-                 )
-            THEN 'GROUP 1'
-
-            WHEN UPPER(TRIM(COALESCE(branddesignation,''))) = 'CONTINENTAL'
-                 AND loadindexsingle > 111
-                 AND ss_value <= 210
-            THEN 'GROUP 2B'
-
-            WHEN UPPER(TRIM(COALESCE(branddesignation,''))) <> 'CONTINENTAL'
-                 AND
-                 (
-                    loadindexsingle <= 104
-                    OR
-                    (
-                        loadindexsingle > 104
-                        AND ss_value > 210
-                    )
-                 )
-            THEN 'GROUP 3'
-
-            WHEN UPPER(TRIM(COALESCE(branddesignation,''))) <> 'CONTINENTAL'
-                 AND loadindexsingle > 104
-                 AND ss_value <= 210
-            THEN 'GROUP 4'
-
-            ELSE NULL
-
-        END AS "Group"
-
-    FROM base
-)
-
-SELECT
-    articleid,
-    articleno,
-    articlevariant,
-    specissue,
-    greentiregutsid,
-    branddesignation,
-    loadindexsingle,
-    speedsymbol,
-    ssr,
-
-    "Group",
-
-    CASE
-        WHEN "Group" = 'GROUP 1'  THEN 10.5
-        WHEN "Group" = 'GROUP 2A' THEN 11.5
-        WHEN "Group" = 'GROUP 2B' THEN 12.5
-        WHEN "Group" = 'GROUP 3'  THEN 12.5
-        WHEN "Group" = 'GROUP 4'  THEN 14.5
-        ELSE NULL
-    END AS standard_rfpp,
-
-    CASE
-        WHEN "Group" = 'GROUP 1'  THEN 7.5
-        WHEN "Group" = 'GROUP 2A' THEN 8.5
-        WHEN "Group" = 'GROUP 2B' THEN 9.0
-        WHEN "Group" = 'GROUP 3'  THEN 9.5
-        WHEN "Group" = 'GROUP 4'  THEN 10.0
-        ELSE NULL
-    END AS standard_rfh1
-
-FROM judgement;
-"""
+# 废弃原多表临时表计算，直接单表查询
+CREATE_TEMP_TABLE_SQL = ""
 
 SELECT_QUERY = """
 SELECT
@@ -396,6 +287,20 @@ SELECT
 
     y.rfppwc_first,
     y.rfh1wc_first,
+    y.rfh2wc_first,
+    y.lfppwc_first,
+    y.lfh1wc_first,
+    y.plys_first,
+    y.tbalw_first,
+    y.bbalw_first,
+    y.sbalw_first,
+    y.bbul_first,
+    y.bdep_first,
+    y.blro_first,
+    y.crro_first,
+    y.tbul_first,
+    y.tdep_first,
+    y.tlro_first,
 
     y.bead_reinforcement_lot,
     y.bead_reinforcement_workcenter,
@@ -403,33 +308,31 @@ SELECT
     y.ssr_insert_bead_cushion_lot,
     y.ssr_insert_bead_cushion_workcenter,
 
-    y.article_fk,
+    -- TU 组评级 (7项)
+    y.grade_rfppwc_first,
+    y.grade_rfh1wc_first,
+    y.grade_rfh2wc_first,
+    y.grade_lfppwc_first,
+    y.grade_lfh1wc_first,
+    y.grade_cony_first,
+    y.grade_plys_first,
 
-    a.article_pk,
-    a.articleid,
+    -- TG 组评级 (7项)
+    y.grade_tbul_first,
+    y.grade_bbul_first,
+    y.grade_tdep_first,
+    y.grade_bdep_first,
+    y.grade_tlro_first,
+    y.grade_blro_first,
+    y.grade_crro_first,
 
-    t.articleno,
-    t.articlevariant,
-    t.specissue,
-    t.greentiregutsid,
-    t.branddesignation,
-    t.loadindexsingle,
-    t.speedsymbol,
-    t.ssr,
-
-    t."Group",
-    t.standard_rfpp,
-    t.standard_rfh1
+    -- TB 组评级 (3项)
+    y.grade_tbalw_first,
+    y.grade_bbalw_first,
+    y.grade_sbalw_first
 
 FROM he_datamarts.yield_flat_table y
-
-LEFT JOIN he_datamarts.article a
-    ON y.article_fk = a.article_pk
-
-LEFT JOIN tmp_dil_article_standard t
-    ON a.articleid = t.articleid
-
-WHERE y.tu_first_loc_timestamp >= CURRENT_DATE - INTERVAL '31 day'
+WHERE y.tu_first_shift_date >= CURRENT_DATE - INTERVAL '31 day'
 ;
 """
 
@@ -499,6 +402,20 @@ SELECT
 
     y.rfppwc_first,
     y.rfh1wc_first,
+    y.rfh2wc_first,
+    y.lfppwc_first,
+    y.lfh1wc_first,
+    y.plys_first,
+    y.tbalw_first,
+    y.bbalw_first,
+    y.sbalw_first,
+    y.bbul_first,
+    y.bdep_first,
+    y.blro_first,
+    y.crro_first,
+    y.tbul_first,
+    y.tdep_first,
+    y.tlro_first,
 
     y.bead_reinforcement_lot,
     y.bead_reinforcement_workcenter,
@@ -506,34 +423,31 @@ SELECT
     y.ssr_insert_bead_cushion_lot,
     y.ssr_insert_bead_cushion_workcenter,
 
-    y.article_fk,
+    -- TU 组评级 (7项)
+    y.grade_rfppwc_first,
+    y.grade_rfh1wc_first,
+    y.grade_rfh2wc_first,
+    y.grade_lfppwc_first,
+    y.grade_lfh1wc_first,
+    y.grade_cony_first,
+    y.grade_plys_first,
 
-    a.article_pk,
-    a.articleid,
+    -- TG 组评级 (7项)
+    y.grade_tbul_first,
+    y.grade_bbul_first,
+    y.grade_tdep_first,
+    y.grade_bdep_first,
+    y.grade_tlro_first,
+    y.grade_blro_first,
+    y.grade_crro_first,
 
-    t.articleno,
-    t.articlevariant,
-    t.specissue,
-    t.greentiregutsid,
-    t.branddesignation,
-    t.loadindexsingle,
-    t.speedsymbol,
-    t.ssr,
-
-    t."Group",
-    t.standard_rfpp,
-    t.standard_rfh1
+    -- TB 组评级 (3项)
+    y.grade_tbalw_first,
+    y.grade_bbalw_first,
+    y.grade_sbalw_first
 
 FROM he_datamarts.yield_flat_table y
-
-LEFT JOIN he_datamarts.article a
-    ON y.article_fk = a.article_pk
-
-LEFT JOIN tmp_dil_article_standard t
-    ON a.articleid = t.articleid
-
-WHERE y.tu_first_loc_timestamp >= %(watermark)s
-ORDER BY y.tu_first_loc_timestamp ASC
+WHERE y.tu_first_shift_date >= %(watermark)s
 ;
 """
 
@@ -730,11 +644,6 @@ def fetch_full(output_parquet=None):
 
         conn.autocommit = False
         with conn:
-            with conn.cursor() as client_cursor:
-                print("正在执行临时表创建 SQL...")
-                client_cursor.execute(CREATE_TEMP_TABLE_SQL)
-                print("临时表 tmp_dil_article_standard 创建成功！")
-
             total_rows, _ = _stream_query_to_parquet(
                 conn, SELECT_QUERY, None, output_parquet,
                 cursor_name="redshift_full_stream_cursor"
@@ -803,11 +712,6 @@ def fetch_incremental(output_parquet=None):
 
         conn.autocommit = False
         with conn:
-            with conn.cursor() as client_cursor:
-                print("正在执行临时表创建 SQL...")
-                client_cursor.execute(CREATE_TEMP_TABLE_SQL)
-                print("临时表 tmp_dil_article_standard 创建成功！")
-
             params = {"watermark": watermark, "run_time": run_time}
             total_rows, max_ts = _stream_query_to_parquet(
                 conn, SELECT_QUERY_INCREMENTAL, params, inc_parquet,

@@ -1,5 +1,6 @@
 /* ==========================================================================
    看板交互式漫游新手引导样式定制 (Driver.js Theme & Ripple Animations)
+   主题风格：大陆集团暖金橙黄 (Continental Warm Amber / Yellow)
    ========================================================================== */
 
 /* 1. 遮罩层深度调优 (确保 SVG 容器本身绝对透明，仅由内部 path 渲染半透明遮罩与镂空) */
@@ -13,18 +14,18 @@
   transition: opacity 0.3s ease !important;
 }
 
-/* 3. 目标元素呼吸脉冲光环 (动态提示点击与关注) */
+/* 3. 目标元素呼吸脉冲光环 (动态提示点击与关注 - 统一为暖金黄色系) */
 @keyframes tour-pulse-halo {
   0% {
-    outline: 2px solid rgba(59, 130, 246, 0.8);
+    outline: 2px solid rgba(245, 158, 11, 0.85);
     outline-offset: 2px;
   }
   50% {
-    outline: 4px solid rgba(59, 130, 246, 0.2);
+    outline: 4px solid rgba(245, 158, 11, 0.25);
     outline-offset: 6px;
   }
   100% {
-    outline: 2px solid rgba(59, 130, 246, 0.8);
+    outline: 2px solid rgba(245, 158, 11, 0.85);
     outline-offset: 2px;
   }
 }
@@ -42,10 +43,10 @@
   color: #0f172a !important;
   border-radius: 14px !important;
   padding: 18px 20px !important;
-  border: 1px solid rgba(226, 232, 240, 0.95) !important;
-  box-shadow: 0 20px 30px -10px rgba(15, 23, 42, 0.18), 0 10px 15px -3px rgba(15, 23, 42, 0.08) !important;
-  max-width: 380px !important;
-  min-width: 300px !important;
+  border: 1px solid rgba(253, 230, 138, 0.95) !important;
+  box-shadow: 0 20px 32px -10px rgba(180, 83, 9, 0.16), 0 10px 18px -3px rgba(15, 23, 42, 0.08) !important;
+  max-width: 420px !important;
+  min-width: 320px !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif !important;
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
@@ -61,7 +62,7 @@
   font-weight: 700 !important;
   color: #0f172a !important;
   line-height: 1.4 !important;
-  margin-bottom: 8px !important;
+  margin-bottom: 10px !important;
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
@@ -71,10 +72,71 @@
 /* 7. 正文内容排版 */
 .driver-popover-description {
   font-size: 13px !important;
-  line-height: 1.65 !important;
-  color: #475569 !important;
-  margin-bottom: 16px !important;
+  line-height: 1.6 !important;
+  color: #334155 !important;
+  margin-bottom: 14px !important;
   font-weight: 400 !important;
+}
+
+/* 极简紧凑数字分点排版 */
+.tour-point-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 6px 0 8px 0;
+}
+
+.tour-point-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.tour-point-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border-radius: 50%;
+  background: #fffbeb;
+  color: #b45309;
+  font-weight: 700;
+  font-size: 11px;
+  margin-top: 1.5px;
+  border: 1px solid #fde68a;
+}
+
+.tour-point-text {
+  flex: 1;
+}
+
+.tour-point-text strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+/* 行动交互轻量提示框 */
+.tour-action-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+.tour-action-tip-icon {
+  font-size: 14px;
 }
 
 /* 8. 底部操作栏 */
@@ -87,14 +149,14 @@
   border-top: 1px solid #f1f5f9 !important;
 }
 
-/* 步骤进度指示器 */
+/* 步骤进度指示器 - 采用黄色系标签 */
 .driver-popover-progress-text {
   font-family: "JetBrains Mono", Menlo, monospace !important;
   font-size: 11.5px !important;
-  font-weight: 600 !important;
-  color: #64748b !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
+  font-weight: 700 !important;
+  color: #b45309 !important;
+  background: #fffbeb !important;
+  border: 1px solid #fde68a !important;
   padding: 3px 10px !important;
   border-radius: 20px !important;
 }
@@ -120,14 +182,14 @@
 }
 
 .driver-popover-prev-btn:hover {
-  background: #f1f5f9 !important;
+  background: #f8fafc !important;
   color: #1e293b !important;
   border-color: #cbd5e1 !important;
 }
 
-/* “下一步” / “完成” 科技蓝渐变主按钮 */
+/* “下一步” / “完成” 标志性黄色渐变主按钮 */
 .driver-popover-next-btn {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
   color: #ffffff !important;
   border: none !important;
   font-size: 12.5px !important;
@@ -135,13 +197,13 @@
   padding: 6px 16px !important;
   border-radius: 8px !important;
   cursor: pointer !important;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.35) !important;
   transition: all 0.2s ease !important;
 }
 
 .driver-popover-next-btn:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45) !important;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.45) !important;
   filter: brightness(1.06) !important;
 }
 
@@ -156,29 +218,29 @@
   color: #334155 !important;
 }
 
-/* 顶栏“使用指南”按钮样式微调 (用于 App.vue) */
+/* 顶栏“新手引导”按钮样式 - 统一为暖黄色系 */
 .tour-trigger-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  border: 1px solid #bfdbfe;
-  color: #1d4ed8;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fde68a;
+  color: #b45309;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 5px 12px;
   border-radius: 20px;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 1px 2px rgba(217, 119, 6, 0.08);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
 
 .tour-trigger-pill:hover {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.18);
-  border-color: #93c5fd;
+  box-shadow: 0 3px 8px rgba(217, 119, 6, 0.18);
+  border-color: #fcd34d;
 }
 
 .tour-trigger-pill:active {
@@ -187,4 +249,95 @@
 
 .tour-trigger-icon {
   font-size: 14px;
+}
+
+/* ==========================================================================
+   动态点击手势与脉冲光环引导动画 (Click Animation Pointer)
+   可直接点击交互（pointer-events: auto）
+   ========================================================================== */
+.tour-click-pointer-container {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.25s ease, transform 0.2s ease;
+}
+
+.tour-click-pointer-container:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.tour-click-pointer-container:active {
+  transform: translate(-50%, -50%) scale(0.96);
+}
+
+/* 脉冲扩散波纹 (黄色，位于指尖上方) */
+.tour-ripple-ring {
+  position: absolute;
+  top: 2px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2.5px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.25);
+  animation: tour-ripple-expand 1.8s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+  pointer-events: none;
+}
+
+.tour-ripple-ring:nth-child(2) {
+  animation-delay: 0.6s;
+}
+
+@keyframes tour-ripple-expand {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* 手势上下微跳动动效 (手放下面朝上指 👆) */
+.tour-pointer-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  animation: tour-pointer-bounce 1.6s ease-in-out infinite;
+}
+
+@keyframes tour-pointer-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.tour-pointer-emoji {
+  font-size: 30px;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
+  line-height: 1;
+}
+
+.tour-pointer-tag {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  box-shadow: 0 3px 8px rgba(217, 119, 6, 0.4);
+  white-space: nowrap;
+  margin-top: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }

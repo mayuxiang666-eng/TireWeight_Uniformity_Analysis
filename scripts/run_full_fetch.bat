@@ -4,19 +4,38 @@ echo ===================================================
 echo Starting Full 31-Day Data Fetch from Amazon Redshift...
 echo ===================================================
 
-cd /d "D:\TU AI\TireWeight_Uniformity_Analysis"
+cd /d "%~dp0.."
 
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
-set PYTHON_EXE=C:\Users\uif45510\AppData\Local\Programs\Python\Python313\python.exe
-if not exist "%PYTHON_EXE%" (
-    if exist "D:\TU AI\TireWeight_Uniformity_Analysis\backend\venv\Scripts\python.exe" (
-        set PYTHON_EXE=D:\TU AI\TireWeight_Uniformity_Analysis\backend\venv\Scripts\python.exe
-    ) else (
-        set PYTHON_EXE=python.exe
+:: Find Python absolute path (Intelligent multi-tier fallback)
+set "PYTHON_EXE="
+if exist "%~dp0..\..\.venv\Scripts\python.exe" (
+    set "PYTHON_EXE=%~dp0..\..\.venv\Scripts\python.exe"
+) else if exist "d:\Ava\untitled1\.venv\Scripts\python.exe" (
+    set "PYTHON_EXE=d:\Ava\untitled1\.venv\Scripts\python.exe"
+) else if exist "C:\Users\uif45510\AppData\Local\Programs\Python\Python313\python.exe" (
+    set "PYTHON_EXE=C:\Users\uif45510\AppData\Local\Programs\Python\Python313\python.exe"
+) else if exist "C:\Users\uif45510\AppData\Local\Programs\Python\Python311\python.exe" (
+    set "PYTHON_EXE=C:\Users\uif45510\AppData\Local\Programs\Python\Python311\python.exe"
+) else if exist "%~dp0..\backend\venv\Scripts\python.exe" (
+    set "PYTHON_EXE=%~dp0..\backend\venv\Scripts\python.exe"
+) else if exist "%~dp0..\venv\Scripts\python.exe" (
+    set "PYTHON_EXE=%~dp0..\venv\Scripts\python.exe"
+) else if exist "C:\Program Files\Python313\python.exe" (
+    set "PYTHON_EXE=C:\Program Files\Python313\python.exe"
+) else if exist "C:\Program Files\Python311\python.exe" (
+    set "PYTHON_EXE=C:\Program Files\Python311\python.exe"
+) else if exist "C:\Python313\python.exe" (
+    set "PYTHON_EXE=C:\Python313\python.exe"
+) else (
+    for /f "delims=" %%i in ('where python.exe 2^>nul') do (
+        if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
     )
 )
+
+if not defined PYTHON_EXE set "PYTHON_EXE=python.exe"
 
 mkdir logs\etl >nul 2>&1
 

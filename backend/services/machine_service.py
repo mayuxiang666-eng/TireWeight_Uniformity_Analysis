@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from backend.core.db import qry
-from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl
+from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl, INDICATORS_SPEC
 from backend.core.serializer import sanitize_data
 from backend.core.time_utils import build_production_time_where, get_phase_sql_condition
 
@@ -44,10 +44,8 @@ def get_machine_cpk(
     tolerance: float = 0.8,
 ):
     try:
-        if indicator == "cony":
-            indicator_col = "cony_first"
-        else:
-            indicator_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+        indicator_col = spec_cfg["col"]
         date_col = "tu_first_shift_date"
 
         if not target_date or not isinstance(target_date, str) or 'annotation=' in str(target_date):
@@ -536,10 +534,8 @@ def get_machine_cpk_trend(
                 }
             }
 
-        if indicator == "cony":
-            indicator_col = "cony_first"
-        else:
-            indicator_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+        indicator_col = spec_cfg["col"]
         normalized_col = workcenter_col if workcenter_col.endswith("_workcenter") else f"{workcenter_col}_workcenter"
         date_col = "tu_first_shift_date"
 
@@ -671,14 +667,12 @@ def get_top_warning_machines(
         if not isinstance(indicator, str):
             indicator = "rfpp"
 
+        spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
         if indicator == "weight":
             indicator_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
             avg_col = f"AVG(ABS(TRY_CAST({indicator_col} AS DOUBLE)))"
-        elif indicator == "cony":
-            indicator_col = "cony_first"
-            avg_col = f"AVG(TRY_CAST({indicator_col} AS DOUBLE))"
         else:
-            indicator_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            indicator_col = spec_cfg["col"]
             avg_col = f"AVG(TRY_CAST({indicator_col} AS DOUBLE))"
             
         global_usl, global_lsl = get_spec_limits(article10, indicator)
@@ -952,8 +946,9 @@ def get_best_tu_machine_for_spec(article10: str, indicator: str = "rfpp", min_sa
             best_tu_machine = tu_rows[0]['tu_machine'] if tu_rows else None
             best_tu_value = tu_rows[0]['std_v'] if tu_rows else 0.0
         else:
-            ind_col = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
-            global_usl = get_spec_usl(article10, indicator)
+            spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+            ind_col = spec_cfg["col"]
+            global_usl, global_lsl = get_spec_limits(article10, indicator)
             tu_sql = f"""
                 SELECT 
                     CAST(tu_first_workcenter AS VARCHAR) as tu_machine,
@@ -971,7 +966,7 @@ def get_best_tu_machine_for_spec(article10: str, indicator: str = "rfpp", min_sa
             for r in tu_rows:
                 avg_v = r['avg_v'] or 0.0
                 std_v = r['std_v'] or 0.0
-                cpk = calc_cpk(avg_v, std_v, global_usl)
+                cpk = calc_cpk(avg_v, std_v, global_usl, global_lsl)
                 r['cpk'] = cpk
             tu_rows.sort(key=lambda x: x['cpk'], reverse=True)
             best_tu_machine = tu_rows[0]['tu_machine'] if tu_rows else None
@@ -1101,13 +1096,11 @@ def get_cpk_trend_comparison(
         if indicator == "weight":
             ind_col = "((TRY_CAST(tire_weight_actual_first AS DOUBLE) - TRY_CAST(tire_weight_target_first AS DOUBLE)) / NULLIF(TRY_CAST(tire_weight_target_first AS DOUBLE), 0.0) * 100.0)"
             usl, lsl = None, None
-        elif indicator == "cony":
-            ind_col = "TRY_CAST(cony_first AS DOUBLE)"
-            usl, lsl = get_spec_limits(article10, indicator) if article10 else (100.0, None)
         else:
-            col_field = "rfppwc_first" if indicator == "rfpp" else "rfh1wc_first"
+            spec_cfg = INDICATORS_SPEC.get(indicator, INDICATORS_SPEC["rfpp"])
+            col_field = spec_cfg["col"]
             ind_col = f"TRY_CAST({col_field} AS DOUBLE)"
-            usl, lsl = get_spec_limits(article10, indicator) if article10 else (100.0, None)
+            usl, lsl = get_spec_limits(article10, indicator) if article10 else (None, None)
 
         mach_list = [m.strip().upper() for m in str(machines).split(",") if m.strip()]
         

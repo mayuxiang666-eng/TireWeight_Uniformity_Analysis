@@ -84,3 +84,20 @@ def get_etl_status():
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/api/etl/trigger")
+@router.get("/api/etl/trigger")
+def trigger_etl_sync():
+    """手动触发一次增量数据抽取与清洗流水线"""
+    import threading
+    from backend.etl.run_pipeline import run_full_pipeline
+
+    def _worker():
+        try:
+            run_full_pipeline(skip_fetch=False, notify=True, full_fetch=False)
+        except Exception as e:
+            print("[ETL Trigger Error]:", e)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"status": "success", "message": "已成功启动增量数据抽取与清洗流水线"}
