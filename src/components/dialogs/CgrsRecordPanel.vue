@@ -1082,16 +1082,20 @@ const combinedChartData = computed(() => {
 
     // 记录调参交界时刻 (改前最后一个数据点位置绘制【第 X 次调参】垂直虚线)
     let splitCat = null
+    let splitIndex = null
     if (beforeList.length > 0) {
-      splitCat = xCategories[startIdx + beforeList.length - 1]
+      splitIndex = startIdx + beforeList.length - 1
+      splitCat = xCategories[splitIndex]
     } else if (transList.length > 0) {
-      splitCat = xCategories[startIdx]
+      splitIndex = startIdx
+      splitCat = xCategories[splitIndex]
     } else if (afterList.length > 0) {
-      splitCat = xCategories[startIdx]
+      splitIndex = startIdx
+      splitCat = xCategories[splitIndex]
     }
 
-    if (splitCat !== null) {
-      splitLines.push({ splitCat, eventNum, eventTimeStr })
+    if (splitIndex !== null) {
+      splitLines.push({ splitCat, splitIndex, eventNum, eventTimeStr })
     }
 
     // 2. 压入连续微调过渡段样本 (Transition <10 胎)
@@ -1177,13 +1181,24 @@ const combinedChartData = computed(() => {
 function renderTrendChart() {
   if (!trendChartRef.value) return
 
+  const el = trendChartRef.value
+  const clientWidth = el.clientWidth || el.getBoundingClientRect().width
+
+  // 若容器尚未完成挂载布局（如处于 el-collapse-transition 折叠过渡中，宽度为 0），暂不初始化，延迟重试
+  if (clientWidth <= 0) {
+    setTimeout(renderTrendChart, 80)
+    setTimeout(renderTrendChart, 200)
+    setTimeout(renderTrendChart, 450)
+    return
+  }
+
   // 确保 instance 绑定在当前真实存活的 DOM 节点上
-  let chart = echarts.getInstanceByDom(trendChartRef.value)
+  let chart = echarts.getInstanceByDom(el)
   if (!chart) {
     if (trendChartInstance) {
       try { trendChartInstance.dispose() } catch (e) {}
     }
-    chart = echarts.init(trendChartRef.value)
+    chart = echarts.init(el)
     trendChartInstance = chart
     window.addEventListener('resize', handleResizeChart)
   } else {
@@ -1198,7 +1213,7 @@ function renderTrendChart() {
   }
 
   // 确保尺寸同步
-  trendChartInstance.resize()
+  trendChartInstance.resize({ width: clientWidth, height: 265 })
 
   const unit = (props.indicator === 'weight' ? '%' : (props.indicator === 'cony' ? 'N' : 'N'))
 
@@ -1209,7 +1224,7 @@ function renderTrendChart() {
   if (splitLines && splitLines.length > 0) {
     splitLines.forEach(sp => {
       markLineData.push({
-        xAxis: sp.splitCat,
+        xAxis: (sp.splitIndex !== undefined && sp.splitIndex !== null) ? sp.splitIndex : sp.splitCat,
         name: `第 ${sp.eventNum} 次调参`,
         lineStyle: {
           color: '#3b82f6',
@@ -1404,10 +1419,17 @@ function renderTrendChart() {
           width: 2
         },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(245, 158, 11, 0.22)' },
-            { offset: 1, color: 'rgba(245, 158, 11, 0.01)' }
-          ])
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(245, 158, 11, 0.22)' },
+              { offset: 1, color: 'rgba(245, 158, 11, 0.01)' }
+            ]
+          }
         },
         markLine: {
           symbol: 'none',
@@ -1451,17 +1473,28 @@ function renderTrendChart() {
           width: 2
         },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(16, 185, 129, 0.22)' },
-            { offset: 1, color: 'rgba(16, 185, 129, 0.01)' }
-          ])
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(16, 185, 129, 0.22)' },
+              { offset: 1, color: 'rgba(16, 185, 129, 0.01)' }
+            ]
+          }
         }
       }
     ]
   }
 
-  trendChartInstance.setOption(option, true)
-  trendChartInstance.resize()
+  try {
+    trendChartInstance.setOption(option, true)
+    trendChartInstance.resize({ width: clientWidth, height: 265 })
+  } catch (err) {
+    console.error('[CgrsRecordPanel] setOption error:', err)
+  }
 }
 
 function zoomToEvent(eventIdx) {
@@ -1482,22 +1515,48 @@ function zoomToEvent(eventIdx) {
 
 let resizeObserver = null
 function setupResizeObserver() {
-  if (trendChartRef.value && window.ResizeObserver) {
-    if (resizeObserver) resizeObserver.disconnect()
-    resizeObserver = new ResizeObserver(() => {
+  if (!trendChartRef.value || !window.ResizeObserver) return
+  if (resizeObserver) resizeObserver.disconnect()
+  resizeObserver = new ResizeObserver(() => {
+    if (trendChartRef.value && trendChartRef.value.clientWidth > 0) {
       if (trendChartInstance) {
-        trendChartInstance.resize()
+        trendChartInstance.resize({
+          width: trendChartRef.value.clientWidth,
+          height: 265
+        })
+      } else {
+        renderTrendChart()
       }
-    })
-    resizeObserver.observe(trendChartRef.value)
+    }
+  })
+  resizeObserver.observe(trendChartRef.value)
+  if (trendChartRef.value.parentElement) {
+    resizeObserver.observe(trendChartRef.value.parentElement)
   }
 }
 
 function handleResizeChart() {
-  if (trendChartInstance) {
-    trendChartInstance.resize()
+  if (trendChartInstance && trendChartRef.value && trendChartRef.value.clientWidth > 0) {
+    trendChartInstance.resize({
+      width: trendChartRef.value.clientWidth,
+      height: 265
+    })
+  } else {
+    renderTrendChart()
   }
 }
+
+defineExpose({
+  resizeChart: () => {
+    renderTrendChart()
+    if (trendChartInstance && trendChartRef.value && trendChartRef.value.clientWidth > 0) {
+      trendChartInstance.resize({
+        width: trendChartRef.value.clientWidth,
+        height: 265
+      })
+    }
+  }
+})
 
 const isCu = computed(() => String(props.machine || '').trim().toUpperCase().startsWith('CU'))
 
@@ -1612,6 +1671,8 @@ async function fetchControlledAnalysis() {
         renderTrendChart()
         setTimeout(renderTrendChart, 80)
         setTimeout(renderTrendChart, 250)
+        setTimeout(renderTrendChart, 380)
+        setTimeout(renderTrendChart, 650)
       })
     } else {
       controlledError.value = res.data?.message || '获取全路径排查数据失败'
@@ -1667,8 +1728,10 @@ watch(
     nextTick(() => {
       setupResizeObserver()
       renderTrendChart()
-      setTimeout(renderTrendChart, 50)
-      setTimeout(renderTrendChart, 180)
+      setTimeout(renderTrendChart, 80)
+      setTimeout(renderTrendChart, 250)
+      setTimeout(renderTrendChart, 380)
+      setTimeout(renderTrendChart, 650)
     })
   },
   { deep: true }
@@ -2528,7 +2591,8 @@ onBeforeUnmount(() => {
 .trend-chart-wrapper {
   position: relative;
   width: 100%;
-  height: 250px;
+  height: 265px;
+  min-height: 265px;
 }
 
 .trend-chart-canvas {

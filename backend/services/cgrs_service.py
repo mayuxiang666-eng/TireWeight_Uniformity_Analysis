@@ -325,7 +325,8 @@ def compute_cgrs_controlled_analysis_data(
     if event_time and str(event_time).strip():
         same_day_only = False
         ev_ts_clean = str(event_time).strip()
-        cgrs_sql = f"""
+        # 查询包含该时刻所在日及前后临近时间段内的所有调参记录，以完整覆盖连续调参会话（避免孤立截断导致后续样本数为0）
+        cgrs_sql = f'''
             SELECT
                 event_timestamp,
                 TechOffsetHistoryLocalDate,
@@ -348,9 +349,12 @@ def compute_cgrs_controlled_analysis_data(
             FROM cgrs_records
             WHERE Workcenter IN ({cgrs_placeholders})
               AND event_timestamp IS NOT NULL
-              AND abs(epoch(TRY_CAST(event_timestamp AS TIMESTAMP)) - epoch(?::TIMESTAMP)) <= 600
-        """
-        cgrs_params = list(cgrs_candidates) + [ev_ts_clean]
+              AND (
+                  TRY_CAST(event_timestamp AS DATE) = TRY_CAST(? AS DATE)
+                  OR abs(epoch(TRY_CAST(event_timestamp AS TIMESTAMP)) - epoch(?::TIMESTAMP)) <= 43200
+              )
+        '''
+        cgrs_params = list(cgrs_candidates) + [ev_ts_clean[:10], ev_ts_clean]
         if not is_cu and article and article.strip():
             art_clean = article.strip()
             prefix7 = art_clean[:7]
@@ -368,8 +372,8 @@ def compute_cgrs_controlled_analysis_data(
             cgrs_rows = []
 
         if not cgrs_rows:
-            # 放宽至该天
-            cgrs_sql_day = f"""
+            # 进一步放宽至 +/- 3 天
+            cgrs_sql_wide = f'''
                 SELECT
                     event_timestamp,
                     TechOffsetHistoryLocalDate,
@@ -392,18 +396,18 @@ def compute_cgrs_controlled_analysis_data(
                 FROM cgrs_records
                 WHERE Workcenter IN ({cgrs_placeholders})
                   AND event_timestamp IS NOT NULL
-                  AND TRY_CAST(event_timestamp AS DATE) = TRY_CAST(? AS DATE)
-            """
-            cgrs_params_day = list(cgrs_candidates) + [ev_ts_clean[:10]]
+                  AND abs(epoch(TRY_CAST(event_timestamp AS TIMESTAMP)) - epoch(?::TIMESTAMP)) <= 259200
+            '''
+            cgrs_params_wide = list(cgrs_candidates) + [ev_ts_clean]
             if not is_cu and article and article.strip():
-                cgrs_sql_day += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ?)"
-                cgrs_params_day.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%"])
+                cgrs_sql_wide += " AND (ProdSpecific2 IS NULL OR ProdSpecific2 = '' OR ProdSpecific2 = ? OR ProdSpecific2 LIKE ? OR ProdSpecific1 = ? OR ProdSpecific1 LIKE ?)"
+                cgrs_params_wide.extend([art_clean, f"{prefix7}%", art_clean, f"{prefix7}%"])
             elif is_cu and article and article.strip():
-                cgrs_sql_day += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
-                cgrs_params_day.extend([prefix7, f"%{prefix7}%"])
-            cgrs_sql_day += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
+                cgrs_sql_wide += " AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?)"
+                cgrs_params_wide.extend([prefix7, f"%{prefix7}%"])
+            cgrs_sql_wide += " ORDER BY event_timestamp DESC, TechOffsetHistoryLocalDate DESC"
             try:
-                cgrs_rows = qry(cgrs_sql_day, cgrs_params_day)
+                cgrs_rows = qry(cgrs_sql_wide, cgrs_params_wide)
             except Exception:
                 cgrs_rows = []
 
@@ -1218,6 +1222,20 @@ def compute_cgrs_controlled_analysis_data(
             "conclusion_text": ev_conclusion_text
         })
 
+    if event_time and str(event_time).strip() and events_result:
+        ev_ts_match = str(event_time).strip()
+        matched_ev = None
+        for ev in events_result:
+            s_ts = str(ev.get('start_timestamp') or '')[:16]
+            e_ts = str(ev.get('end_timestamp') or '')[:16]
+            d_str = str(ev.get('date_time_str') or '')
+            t_str = str(ev.get('timestamp') or '')[:16]
+            if (s_ts and e_ts and s_ts <= ev_ts_match[:16] <= e_ts) or ev_ts_match[:16] in d_str or ev_ts_match[:16] == t_str:
+                matched_ev = ev
+                break
+        if matched_ev:
+            events_result = [matched_ev]
+
     latest_event = events_result[0] if events_result else {}
 
     return {
@@ -1386,29 +1404,24 @@ def _eval_machine_cgrs_strictly_plan_b(
     is_curing: bool
 ) -> Optional[Dict[str, Any]]:
     """
-    针对单台机台执行过去 30 天严密 CGRS 控制变量窗口评估与方案 B 选拔:
-    1. 封闭样本时间窗口 [t_prev, start_ts) 与 [end_ts, min(t_next, ref_date 23:59:59))，绝不跨相邻调参生效区
-    2. 5分钟微调聚类 + 相邻 < 15 胎连续震荡微调合并 (同参数取最早 From ➔ 最新 To)
-    3. 方案 B 选拔: 在正向改善 (diff > 0 且 改后样本 >= 5) 中，按改后绝对水平最高 (cpk_after DESC, diff DESC) 锁定黄金方案
+    针对单台机台执行过去 30 天严密 CGRS 控制变量窗口评估与方案选拔:
+    直接复用全工序路径受控分析引擎 compute_cgrs_controlled_analysis_data，
+    保证推荐选拔与展开面板口径 100% 严格一致：
+    1. 扫描过去 30 天内 target_mach 生产该规格发生 CGRS 调参的所有日期
+    2. 对每个日期调用 compute_cgrs_controlled_analysis_data 执行全工序有效路径拆分与加总
+    3. 严密受控门槛：必须包含有效路径，改后样本 >= 5，且受控 cpk_diff > 0 (正向提升，杜绝恶化事件)
+    4. 方案 B 黄金方案排序：在所有正向改善事件中，按 (cpk_after DESC, cpk_diff DESC) 锁定最优
     """
     try:
         spec_prefix7 = article10[:7] if len(article10) >= 7 else article10
-        spec_cfg = INDICATORS_SPEC.get(indicator_name, INDICATORS_SPEC["rfpp"])
-        ind_col = f"TRY_CAST({spec_cfg['col']} AS DOUBLE)"
-        usl, lsl = get_spec_limits(article10, indicator_name) if article10 else (None, None)
-
         candidates = [target_mach]
         if is_curing:
-            clean_wc_col = "ct_workcenter"
-            clean_time_col = "ct_loc_timestamp"
             if target_mach.startswith("CU") and not target_mach.startswith("CUG"):
                 candidates.append(f"CUG{target_mach[2:]}")
             elif target_mach.startswith("CUG"):
                 candidates.append(f"CU{target_mach[3:]}")
             spec_filter_cgrs = f"AND (RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = '{spec_prefix7}' OR CAST(MaterialMasterID AS VARCHAR) LIKE '%{spec_prefix7}%')"
         else:
-            clean_wc_col = "gt_workcenter"
-            clean_time_col = "gt_loc_timestamp"
             if target_mach.startswith("TB2"):
                 candidates.append(f"TB1{target_mach[3:]}")
             elif target_mach.startswith("TB1"):
@@ -1417,161 +1430,79 @@ def _eval_machine_cgrs_strictly_plan_b(
 
         cands_sql = "', '".join(candidates)
 
-        sql_cgrs = f"""
-            SELECT
-                event_timestamp,
-                TechOffsetHistoryLocalDate,
-                Workcenter,
-                ParameterLocalName,
-                ParameterName,
-                ParameterValue,
-                TechOffsetHistoryValueFrom,
-                TechOffsetHistoryValueTo,
-                TechOffsetValue,
-                ParameterUnitSymbol,
-                Priority,
-                UserName
+        sql_dates = f"""
+            SELECT DISTINCT TRY_CAST(event_timestamp AS DATE) as d
             FROM cgrs_records
             WHERE Workcenter IN ('{cands_sql}')
               AND TRY_CAST(event_timestamp AS DATE) <= '{ref_date_str}'::DATE
               AND TRY_CAST(event_timestamp AS DATE) >= ('{ref_date_str}'::DATE - INTERVAL 30 DAY)
               {spec_filter_cgrs}
-            ORDER BY event_timestamp ASC
+            ORDER BY d DESC
         """
-        raw_rows = qry(sql_cgrs)
-        if not raw_rows:
+        raw_dates = qry(sql_dates)
+        if not raw_dates:
             return None
 
-        # 1. 5分钟微调聚类
-        clustered = []
-        for r in raw_rows:
-            ts = r.get('event_timestamp')
-            if not ts:
+        improved_events = []
+        for r_d in raw_dates:
+            d_str = str(r_d['d'])
+            try:
+                ctrl_res = compute_cgrs_controlled_analysis_data(
+                    workcenter=target_mach,
+                    date=d_str,
+                    article=article10,
+                    indicator=indicator_name,
+                    same_day_only=False
+                )
+            except Exception:
                 continue
-            matched = None
-            for c in clustered:
-                if abs((ts - c['timestamp']).total_seconds()) <= 300:
-                    matched = c
-                    break
-            
-            p_val = float(r.get('ParameterValue') or 0.0)
-            v_from = float(r.get('TechOffsetHistoryValueFrom') or 0.0)
-            v_to = float(r.get('TechOffsetHistoryValueTo') or r.get('TechOffsetValue') or 0.0)
-            
-            p_info = {
-                "ParameterName": r.get('ParameterName'),
-                "ParameterLocalName": r.get('ParameterLocalName') or r.get('ParameterName'),
-                "ParameterValue": p_val,
-                "TechOffsetHistoryValueFrom": v_from,
-                "TechOffsetHistoryValueTo": v_to,
-                "final_value": round(p_val + v_to, 4),
-                "ParameterUnitSymbol": r.get('ParameterUnitSymbol') or "",
-                "Priority": r.get('Priority') or 3,
-                "UserName": r.get('UserName') or "工艺员",
-                "event_time": str(r.get('TechOffsetHistoryLocalDate') or ts)
-            }
-            if matched:
-                matched['params'].append(p_info)
-            else:
-                clustered.append({
-                    "timestamp": ts,
-                    "date_str": str(r.get('TechOffsetHistoryLocalDate') or ts),
-                    "params": [p_info]
-                })
 
-        # 2. 相邻两次调参生产样本 < 15 胎合并 (防止频繁震荡微调)
-        merged_groups = []
-        curr_group = []
-        for ev in clustered:
-            if not curr_group:
-                curr_group.append(ev)
-            else:
-                prev_ts = curr_group[-1]['timestamp']
-                curr_ts = ev['timestamp']
-                cnt_sql = f"""
-                    SELECT COUNT(*) as cnt FROM clean_yield
-                    WHERE {clean_wc_col} IN ('{cands_sql}')
-                      AND article10 LIKE '{spec_prefix7}%'
-                      AND TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{prev_ts}'::TIMESTAMP
-                      AND TRY_CAST({clean_time_col} AS TIMESTAMP) < '{curr_ts}'::TIMESTAMP
-                """
-                cnt_res = qry(cnt_sql)
-                cnt = cnt_res[0]['cnt'] if cnt_res else 0
-                if cnt < 15:
-                    curr_group.append(ev)
-                else:
-                    merged_groups.append(curr_group)
-                    curr_group = [ev]
-        if curr_group:
-            merged_groups.append(curr_group)
+            for ev in ctrl_res.get('events', []):
+                summary = ev.get('overall_summary', {})
+                eff_paths = ev.get('effective_paths', [])
+                cpk_b = summary.get('cpk_before')
+                cpk_a = summary.get('cpk_after')
+                diff = summary.get('cpk_diff', 0.0)
+                yoy = summary.get('yoy_pct', 0.0)
+                nb = summary.get('n_before', 0)
+                na = summary.get('n_after', 0)
 
-        # 3. 严格封闭窗口 CGRS 评估
-        scored_events = []
-        tot_g = len(merged_groups)
-        ref_limit_dt = datetime.strptime(f"{ref_date_str} 23:59:59", "%Y-%m-%d %H:%M:%S")
+                # 硬门槛：必须有有效路径，改后样本 >= 5，且 cpk_diff > 0 (正向改善)
+                if diff is not None and diff > 0 and len(eff_paths) > 0 and na >= 5 and cpk_a is not None:
+                    mapped_params = []
+                    for p in ev.get('params_changed', []):
+                        std_v = float(p.get('std_val') or 0.0)
+                        off_to = float(p.get('offset_to') or 0.0)
+                        off_from = float(p.get('offset_from') or 0.0)
+                        mapped_params.append({
+                            "ParameterName": p.get("param_code") or p.get("param_local"),
+                            "ParameterLocalName": p.get("param_local") or p.get("param_code"),
+                            "ParameterValue": std_v,
+                            "TechOffsetHistoryValueFrom": off_from,
+                            "TechOffsetHistoryValueTo": off_to,
+                            "final_value": float(p.get("to_val") or (std_v + off_to)),
+                            "ParameterUnitSymbol": p.get("unit") or "",
+                            "Priority": p.get("priority") or 3,
+                            "UserName": p.get("user_name") or "工艺员",
+                            "event_time": ev.get("date_time_str") or ev.get("timestamp")
+                        })
 
-        for idx, g in enumerate(merged_groups):
-            start_ts = g[0]['timestamp']
-            end_ts = g[-1]['timestamp']
-            t_prev = merged_groups[idx - 1][-1]['timestamp'] if idx > 0 else None
-            t_next = merged_groups[idx + 1][0]['timestamp'] if idx < tot_g - 1 else None
+                    improved_events.append({
+                        "machine": target_mach,
+                        "event_time": str(ev.get('date_time_str') or ev.get('timestamp'))[:16],
+                        "nb": nb,
+                        "na": na,
+                        "cpk_b": round(cpk_b, 3) if cpk_b else None,
+                        "cpk_a": round(cpk_a, 3) if cpk_a else None,
+                        "diff": round(diff, 3) if diff else None,
+                        "yoy_pct": round(yoy, 2) if yoy else None,
+                        "effective_paths_count": len(eff_paths),
+                        "params": mapped_params
+                    })
 
-            # 改前样本窗口 [t_prev, start_ts)
-            sql_b_where = [
-                f"{clean_wc_col} IN ('{cands_sql}')",
-                f"article10 LIKE '{spec_prefix7}%'",
-                f"TRY_CAST({clean_time_col} AS TIMESTAMP) < '{start_ts}'::TIMESTAMP"
-            ]
-            if t_prev:
-                sql_b_where.append(f"TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{t_prev}'::TIMESTAMP")
-            sql_b = f"SELECT {ind_col} as val FROM clean_yield WHERE {' AND '.join(sql_b_where)} ORDER BY {clean_time_col} DESC LIMIT 50"
-            vals_b = [float(x['val']) for x in qry(sql_b) if x.get('val') is not None]
-
-            # 改后样本窗口 [end_ts, min(t_next, ref_limit_dt))
-            next_limit = min(t_next, ref_limit_dt) if t_next else ref_limit_dt
-            sql_a_where = [
-                f"{clean_wc_col} IN ('{cands_sql}')",
-                f"article10 LIKE '{spec_prefix7}%'",
-                f"TRY_CAST({clean_time_col} AS TIMESTAMP) >= '{end_ts}'::TIMESTAMP",
-                f"TRY_CAST({clean_time_col} AS TIMESTAMP) <= '{next_limit}'::TIMESTAMP"
-            ]
-            sql_a = f"SELECT {ind_col} as val FROM clean_yield WHERE {' AND '.join(sql_a_where)} ORDER BY {clean_time_col} ASC LIMIT 50"
-            vals_a = [float(x['val']) for x in qry(sql_a) if x.get('val') is not None]
-
-            cpk_b = calc_cpk(float(np.mean(vals_b)), float(np.std(vals_b, ddof=1)), usl, lsl) if len(vals_b) > 1 else None
-            cpk_a = calc_cpk(float(np.mean(vals_a)), float(np.std(vals_a, ddof=1)), usl, lsl) if len(vals_a) > 1 else None
-            diff = (cpk_a - cpk_b) if (cpk_a is not None and cpk_b is not None) else None
-
-            # 同参数吸收合并 (取最早 From ➔ 最新 To)
-            p_map = {}
-            for ev_item in g:
-                for p in ev_item['params']:
-                    p_k = p['ParameterName'] or p['ParameterLocalName']
-                    if p_k not in p_map:
-                        p_map[p_k] = dict(p)
-                    else:
-                        p_map[p_k]['TechOffsetHistoryValueTo'] = p['TechOffsetHistoryValueTo']
-                        p_map[p_k]['final_value'] = p['final_value']
-
-            scored_events.append({
-                "machine": target_mach,
-                "event_time": str(g[-1]['date_str'])[:16],
-                "nb": len(vals_b),
-                "na": len(vals_a),
-                "cpk_b": round(cpk_b, 3) if cpk_b else None,
-                "cpk_a": round(cpk_a, 3) if cpk_a else None,
-                "diff": round(diff, 3) if diff else None,
-                "params": list(p_map.values())
-            })
-
-        # 4. 方案 B 黄金方案选拔 (正向改善 diff > 0 且 改后样本 >= 5，优先改后 CPK 最高)
-        improved = [
-            e for e in scored_events 
-            if e['diff'] is not None and e['diff'] > 0 and e['na'] >= 5 and e['cpk_a'] is not None
-        ]
-        if improved:
-            improved.sort(key=lambda x: (x['cpk_a'], x['diff']), reverse=True)
-            return improved[0]
+        if improved_events:
+            improved_events.sort(key=lambda x: (x['cpk_a'], x['diff']), reverse=True)
+            return improved_events[0]
         return None
     except Exception as e:
         print(f"Error evaluating machine CGRS {target_mach}: {e}")

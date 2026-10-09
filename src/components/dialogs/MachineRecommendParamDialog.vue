@@ -70,7 +70,7 @@
     </div>
 
     <!-- 推荐调参对应的 CGRS 生产表现与趋势分析折叠面板 (点击顶端推荐调参选取日期展开) -->
-    <el-collapse-transition>
+    <el-collapse-transition @after-enter="handleCgrsTransitionDone">
       <div v-if="showCgrsPanel" class="cgrs-embedded-panel-card">
         <div class="embedded-panel-header">
           <div class="embedded-panel-title">
@@ -86,6 +86,7 @@
         </div>
         <div class="embedded-panel-body">
           <CgrsRecordPanel
+            ref="embeddedCgrsPanelRef"
             :machine="recData?.source_machine || recData?.recommend_machine || machine"
             :date="formatShortDate(selectedEventTime || recData?.recommend_event_date || recData?.best_event_time)"
             :event-time="selectedEventTime || recData?.best_event_time || recData?.recommend_event_date"
@@ -294,7 +295,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { Loading, InfoFilled, CircleCloseFilled, View, Hide, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import CgrsRecordPanel from './CgrsRecordPanel.vue'
 
@@ -321,7 +322,24 @@ const error = ref(null)
 const recData = ref(null)
 const selectedEventTime = ref('') // 当前选中的具体调参事件时间戳
 const showPreState = ref(false) // 默认只展示结果（不展示推荐修改前状态列）
-const showCgrsPanel = ref(false) // 默认收起 CGRS 面板，点击日期胶囊可展开
+const showCgrsPanel = ref(false)
+const embeddedCgrsPanelRef = ref(null)
+
+function handleCgrsTransitionDone() {
+  if (embeddedCgrsPanelRef.value?.resizeChart) {
+    embeddedCgrsPanelRef.value.resizeChart()
+  }
+}
+
+watch(() => showCgrsPanel.value, (newVal) => {
+  if (newVal) {
+    nextTick(() => {
+      setTimeout(() => embeddedCgrsPanelRef.value?.resizeChart?.(), 100)
+      setTimeout(() => embeddedCgrsPanelRef.value?.resizeChart?.(), 350)
+      setTimeout(() => embeddedCgrsPanelRef.value?.resizeChart?.(), 600)
+    })
+  }
+})
 
 const isCu = computed(() => {
   const m = String(props.machine || '').toUpperCase()
@@ -408,6 +426,13 @@ function onTopDatePillClick() {
   showCgrsPanel.value = !showCgrsPanel.value
   if (showCgrsPanel.value && !selectedEventTime.value) {
     selectedEventTime.value = recData.value?.best_event_time || recData.value?.recommend_event_date || ''
+  }
+  if (showCgrsPanel.value) {
+    nextTick(() => {
+      setTimeout(() => embeddedCgrsPanelRef.value?.resizeChart?.(), 100)
+      setTimeout(() => embeddedCgrsPanelRef.value?.resizeChart?.(), 300)
+      setTimeout(() => embeddedCgrsPanelRef.value?.resizeChart?.(), 600)
+    })
   }
 }
 

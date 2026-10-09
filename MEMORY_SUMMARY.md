@@ -768,3 +768,112 @@
   - **默认展示结果**：`showPreState` 初始默认值为 `false`，打开弹窗时【推荐修改前状态】列默认隐藏，用户第一眼直观聚焦核心三列结果：**工序参数名称 ➔ 当前参数状态 ➔ 推荐修改后状态 ➔ 修改变化**；
   - **按需展开**：弹窗右上角提供 `展示修改前状态` 按钮（带眼睛图标）；用户若需要核对历史改前基线，点击该按钮即可展开【推荐修改前状态】列，按钮状态联动变为高亮的 `只看结果`，再次点击即可快速收起。
 
+
+
+---
+
+## 26. 硫化机台 CGRS 与推荐参数的规格三维联合匹配 (2026-09-23)
+- **业务机理发现**：
+  - 深入排查确认硫化机 CGRS 调参记录表中的 `MaterialMasterID`（规格代码）的**后 7 位**，与产品 10 位规格代码 `article10` 的**前 7 位**严格一致。
+- **代码重构落地** ([cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/cgrs_service.py) & [status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py))：
+  - **`get_cgrs_records` 调参记录检索**：当为硫化机台（`is_cu=True`）时，加入 `RIGHT(CAST(MaterialMasterID AS VARCHAR), 7) = ? OR CAST(MaterialMasterID AS VARCHAR) LIKE ?` 过滤，并在指定日期生产该规格的时间段内圈定；
+  - **`_eval_machine_cgrs_strictly_plan_b` 候选评估**：硫化机台查询调参事件时一律启用 `MaterialMasterID` 后 7 位规格条件；
+  - **`_get_machine_current_param_offsets` 与工艺底表偏置提取**：硫化机台按机台 + 规格后 7 位 + 时间联合提取当前偏置与历史截断点偏置，彻底消除了跨规格参数串扰问题。
+
+---
+
+## 27. ETL 数据管道性能深度优化与 DuckDB 内存保护 (2026-09-23)
+- **问题背景**：
+  - 服务器端进行全量数据抓取和清洗耗时过长，DuckDB 与 Python 频繁发生高内存占用与 `ArrayMemoryError` 甚至 OOM 闪退。
+- **优化实施** ([fetch_data.py](file:///d:/Ava/untitled1/untitled1_v2/backend/etl/fetch_data.py), [clean_data.py](file:///d:/Ava/untitled1/untitled1_v2/backend/etl/clean_data.py), [run_pipeline.py](file:///d:/Ava/untitled1/untitled1_v2/backend/etl/run_pipeline.py))：
+  - **增量抓取与增量清洗**：Redshift 数据库抽取 SQL 的 WHERE 条件加入 `tu_first_shift_date` 严格分区键过滤；清洗层切换为批次增量处理，避免全量 155 万行重复重清洗；
+  - **DuckDB 内存硬防护**：初始化显式配置 `temp_directory`、`max_memory=4GB`、`threads=4`，防止内存无节制上涨；
+  - **流式分块缩容**：将分块 chunk_size 从 100,000 降至 20,000，彻底消除内存峰值引发的数组内存溢出异常；
+  - **清洗字段瘦身**：在清洗阶段剔除 25+ 个旧版评级和无用标记字段，大幅缩减 Parquet 输出与 DuckDB 缓存文件体积；
+  - **调用修复**：修复 `merge_main()` 传参错误，打通全流程自动增量流水线。
+
+---
+
+## 28. 控制台与实时运维日志 UTF-8 编码统一改造 (2026-09-23)
+- **问题背景**：
+  - Windows Server 控制台默认使用 GBK 代码页，导致 Python 实时输出日志及管道输出时出现大量中文字符乱码，且多个日志文件重叠分散。
+- **优化实施** ([scripts/tee_utf8.py](file:///d:/Ava/untitled1/untitled1_v2/scripts/tee_utf8.py) & [Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue))：
+  - 新增 `tee_utf8.py` 辅助脚本，统一接管控制台 stdout 与日志文件写入，强制以 UTF-8 编码实时双写，彻底消除乱码；
+  - 梳理服务启动与任务调度配置，统一日志收敛输出；
+  - 移除前端 Dashboard 顶部的“立即同步数据”手动触发按钮，界面交互与后台定时自动化运维完全解耦。
+
+---
+
+## 29. 项目工程结构清理与版本库提交 (2026-09-24)
+- **清理方案执行**：
+  - 彻底删除项目根目录 `scratch/` 下 130+ 个开发阶段的一次性临时脚本与大文件备份（包括 7330 行的 `server_main.py` 等）；
+  - 删除根目录下 8 个临时调试脚本（`scratch_*.py`）及本地测试导出的 `cpk_indicators_trend.html`；
+  - 更新 [.gitignore](file:///d:/Ava/untitled1/untitled1_v2/.gitignore)，规范忽略 `scratch/`、`backend/scratch/`、`*.duckdb` 与 HTML 导出文件；
+  - 执行前端 `npm run build` 验证生产打包无误，完成 Git 规范化提交（commit: `78eb22e`）。
+
+---
+
+## 30. 智能参数推荐评估引擎重构：直接复用全工序路径受控分析引擎 (2026-10-08)
+- **业务痛点**：
+  - 用户在机台推荐弹窗中发现：系统推荐了 `CU313` 在 `2026-09-20` 的调参，但下方展开的受控分析面板中却赫然显示红色大卡片 `⚠️ CPK 恶化最严 (-5.17%)`，推荐结论与实测面板严重自相矛盾。
+- **根因分析**：
+  - 旧版推荐选拔引擎 `_eval_machine_cgrs_strictly_plan_b` 采用了单机前后粗抽 50 胎的简化逻辑（单机粗算 `+0.018`）；
+  - 而展开面板采用的是严密的全工序路径拆分（成型 ➔ 硫化 ➔ 终检）；该事件流经下游嫌疑机台 `TU6` 时暴跌（-31.2%），导致受控汇总为 `-5.19%`；
+  - “粗粒度单机逻辑”与“细粒度全工序受控逻辑”口径不一致，导致了恶化方案被误推上屏。
+- **重构实施（单一真相源 Single Source of Truth）** ([cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/cgrs_service.py))：
+  - **废弃私有粗暴 SQL**：彻底移除针对单机直接查 50 胎的粗略计算代码；
+  - **直接复用受控分析引擎**：机台评估直接调用内部成熟的 `compute_cgrs_controlled_analysis_data`，严格继承全工序路径拆分、双侧样本 $\ge 5$ 胎且比例 $\le 2.5$ 倍平衡过滤机制；
+  - **严格受控红线门槛**：必须存在有效路径，改后样本 $\ge 5$，且**受控 `cpk_diff > 0`（真实正向提升）**，任何受下游干扰拉垮或自身恶化的事件一票否决；
+  - **黄金标杆选拔**：在所有正向事件中，严格按 `(cpk_after DESC, cpk_diff DESC)` 排序，选拔改后水准最高者；
+- **验证闭环**：
+  - 针对 `CU314`（规格：`0358491087`，基准日：`2026-10-05`），系统自动过滤掉 `09-20` 恶化事件，成功选出 `CU313` 在 `09-11` 的真正标杆（受控 CPK 从 0.759 提升至 0.765，提升 +0.78%）；
+  - 推荐弹窗与展开面板数值 100% 严密对齐，彻底消除了红卡“恶化最严”误报；单机扫描平均耗时不到 1 秒，性能完全达标。
+
+---
+
+## 31. 【前端图表修复】机台推荐弹窗中嵌套 CGRS 趋势折线图空白未展示问题根因与修复 (2026-10-08)
+
+### 问题现象
+用户在“机台参数推荐”弹窗（`MachineRecommendParamDialog.vue`）中，点击顶部的推荐调参时间胶囊展开下方的“CGRS 调参生产表现与全工序实时趋势面板（`CgrsRecordPanel.vue`）”时，卡片中的“多次调参实测值趋势对比（按时间先后时序）”折线图区域显示为一个纯白色空白占位框（高度 ~265px），坐标轴、网格与曲线均未展示。
+
+### 根因分析 (Root Cause)
+1. **折叠动画过渡期间容器宽度为 0 导致 ECharts Canvas 尺寸塌陷**：
+   - 嵌套的 `CgrsRecordPanel` 位于 `<el-collapse-transition>` 内部。当点击胶囊展开时，Element Plus 的折叠过渡动画从 `height: 0` 开始执行（耗时约 300~350ms）。
+   - 数据请求（`fetchControlledAnalysis`）返回后，原有代码在 `nextTick()` 及 `setTimeout(80)`、`setTimeout(250)` 时调用 `renderTrendChart()`。这些调用均在折叠动画未完成期间触发，此时 `trendChartRef.value.clientWidth` 为 0 或处于动态变化中。
+   - ECharts 在 `clientWidth === 0` 的容器上初始化或执行 `resize()` 时，内部生成的 `<canvas>` 宽高被固定为 `0px × 0px`。
+2. **ResizeObserver 局限性**：
+   - 原代码 `ResizeObserver` 仅监听图表内部 DOM（其内联样式固定为 `height: 265px`），当父级外层折叠卡片在 300ms 后动画结束恢复真实尺寸时，图表容器自身样式未发生变动，`ResizeObserver` 未能感知到父容器展开完成，导致动画结束后未再触发重绘。
+3. **渐变色对象与显式尺寸**：
+   - 使用 `new echarts.graphic.LinearGradient` 在模块化打包时存在实例化风险，改为标准声明式对象配置 `{ type: 'linear', ... }` 更稳健。
+
+### 修复方案
+1. **容器可用性守卫与重试机制**：
+   - 在 `CgrsRecordPanel.vue` 的 `renderTrendChart()` 开头加入容器宽度检测：`if (el.clientWidth <= 0)` 时暂不初始化 0x0 画布，而是延迟 120ms/300ms/500ms 重试。
+2. **折叠动画完成钩子与暴露调用**：
+   - 在 `MachineRecommendParamDialog.vue` 的 `<el-collapse-transition>` 上监听 `@after-enter="handleCgrsTransitionDone"` 事件，在折叠展开动画彻底完成时，通过 `ref` 显式调用子组件的 `resizeChart()`。
+3. **显式像素尺寸同步**：
+   - 在 `resize({ width: clientWidth, height: 265 })` 中显式指定宽高参数，强制 ECharts 画布尺寸与外层包裹框精准一致。
+   - `ResizeObserver` 同时监听图表 DOM 及其父级 DOM，且若尺寸恢复时图表未初始化则自动调用 `renderTrendChart()` 补全渲染。
+4. **统一 CSS 容器高度**：
+   - 将 `.trend-chart-wrapper` 由 250px 统一修正为 265px，彻底消除 15px 的样式溢出。
+
+
+---
+
+## 32. 【指标与配方数据机制】10.5 当天 PLYS 指标核心规格行动表仅展示少量规格的归因与排查 (2026-10-09)
+
+### 现象与问题
+用户反馈在日期选择 2026-10-05、指标选择 PLYS 时，“核心规格行动表”仅展示了 2 个规格（`0311573010`、`0312930010`），疑问为何规格数量较少。
+
+### 根因与全链路数据漏斗分析
+1. **配方标准覆盖率极低（根本原因）**：
+   - 轮胎行业及工厂配方库（`Recipes.csv`）中，`PLYS`（帘线剥离力/等效应力）对 99.2% 的规格未设定实际考核上下限（在配方中填写的均为 `960 / 1` 或 `9980 / 1` 这种不考核的虚拟占位极值）。
+   - 数据清洗层（`clean_data.py`）严格排除了此类虚拟占位值，导致全厂 2,884 个配方中仅有 22 个配方具备真实有效公差；全厂历史实测数据中仅有 6 个规格有 PLYS 公差。
+   - 2026-10-05 当天生产的 270 个规格中，仅有 3 个规格具备有效 PLYS 配方公差（`0312930010`、`0311573010`、`0358157002`）。无有效公差的规格无法计算 CPK，无法纳入预警分析。
+2. **行动表业务规则过滤**：
+   - **产量门槛（>=30）**：3 个规格均达标（59、269、680 条）；
+   - **CPK 门槛（<0.90）**：3 个规格 CPK 分别为 0.02、0.38、0.71，均满足预警门槛；
+   - **负向贡献度门槛**：当天全厂加权平均 CPK 为 0.58。`0358157002` 的 CPK 为 0.71，高于全厂均值（属于正向贡献），按历史规则不属于拉低全厂的恶化规格而被剔除；
+   - **机台预警下钻**：剩余的 `0311573010`（命中 3 台报警机台）与 `0312930010`（命中 2 台报警机台）成功匹配到报警机台并展示在行动表中。
+3. **对比与结论**：
+   - RFPP/LFPP/BULS 的配方覆盖率达 99.5%，而 PLYS 仅 0.76%，此为行业指标特性导致的数据分布差异，系统计算逻辑与过滤规则表现完全正常。
