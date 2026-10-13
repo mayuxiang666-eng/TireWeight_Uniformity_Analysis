@@ -125,6 +125,25 @@ def get_cgrs_recommended_params(
             res["recommend_machine"] = res.get("source_machine") or comp_res.get("recommend_machine") or machine
             res["is_optimal_no_diff"] = res.get("is_optimal_no_diff", False) or comp_res.get("is_optimal_no_diff", False)
             res["status_comparison"] = comp_res.get("status_comparison", [])
+            # 零变化/已达到最佳参数过滤：
+            # 如果判定为最佳基准无差异 (is_optimal_no_diff)，或者所有变更项修改量均为 0 ("已到达最佳参数")，或者变更参数数量为 0：标记无有效推荐
+            comp_is_optimal = res.get("is_optimal_no_diff", False) or comp_res.get("is_optimal_no_diff", False)
+            comp_changed_rows = [r for r in comp_res.get("status_comparison", []) if r.get("is_changed")]
+            
+            all_comp_rows_zero = False
+            if comp_is_optimal:
+                all_comp_rows_zero = True
+            elif len(comp_changed_rows) > 0 and all(r.get("change") == "已到达最佳参数" or abs(float(r.get("change_value") or 0.0)) < 0.0001 for r in comp_changed_rows):
+                all_comp_rows_zero = True
+            elif comp_res.get("has_current_snapshot") and comp_res.get("changed_params_count", 0) == 0:
+                all_comp_rows_zero = True
+
+            if all_comp_rows_zero:
+                res["has_recommendation"] = False
+                res["is_optimal_no_diff"] = True
+                res["recommend_title"] = "未查询到有效推荐参数"
+                res["message"] = f"机台 [{machine}] 当前工艺参数已稳定在同分期最佳基准（各参数已到达最佳参数），修改变化量均为 0，暂无更优参数可调整。"
+
         except Exception as e:
             res["status_comparison_error"] = str(e)
 

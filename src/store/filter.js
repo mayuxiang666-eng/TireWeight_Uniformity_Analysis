@@ -63,7 +63,7 @@ export const useFilterStore = defineStore('filter', () => {
   // 响应式指标分组列表（支持选中日期后动态置顶排行第一工序与指标增幅排序）
   const indicatorGroups = ref(JSON.parse(JSON.stringify(BASE_INDICATOR_GROUPS)))
 
-  function updateIndicatorPriority(topProcess, detailIndicators, date) {
+  function updateIndicatorPriority(topProcess, detailIndicators, date, highlightIndicator = null) {
     if (!date || !topProcess) {
       indicatorGroups.value = JSON.parse(JSON.stringify(BASE_INDICATOR_GROUPS))
       return
@@ -76,6 +76,13 @@ export const useFilterStore = defineStore('filter', () => {
       for (const grp of groupsCopy) {
         const details = detailIndicators[grp.group]
         if (details && Array.isArray(details) && details.length > 0) {
+          // 目标高亮推荐项：若未显式指定，则在第一工序中顺延选取首个当日异常数 >= 50 的指标
+          let targetKey = highlightIndicator
+          if (!targetKey && grp.group === topProcess) {
+            const ge50 = details.find(it => (it.count || 0) >= 50)
+            targetKey = ge50 ? ge50.key : (details[0]?.key || null)
+          }
+
           grp.options = details.map((d, dIdx) => {
             let growthText = '-'
             let growthClass = 'neutral'
@@ -91,6 +98,9 @@ export const useFilterStore = defineStore('filter', () => {
                 growthClass = 'neutral'
               }
             }
+            const isTargetMax = targetKey 
+              ? (d.key === targetKey || d.value === targetKey)
+              : (dIdx === 0)
             return {
               label: d.label || d.key.toUpperCase(),
               value: d.key,
@@ -104,7 +114,7 @@ export const useFilterStore = defineStore('filter', () => {
               nextCount: d.next_count,
               nextDate: d.next_date,
               currDate: d.date || date,
-              isMax: grp.group === topProcess && dIdx === 0
+              isMax: grp.group === topProcess && isTargetMax
             }
           })
         }

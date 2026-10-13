@@ -9,11 +9,11 @@
             <div class="card-title" style="display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <span>{{ tab1SelectedArticle ? tab1SelectedArticle + ' · ' : '' }}整体指标预览</span>
               
-              <!-- Tab 视图切换控件 -->
+              <!-- Tab 视图切换控件 (与 Main Hall 保持完全一致的看板风格) -->
               <el-radio-group
                 v-model="trendViewMode"
                 size="small"
-                class="trend-mode-switch"
+                style="margin-left: 6px;"
                 @change="handleTrendViewModeChange"
               >
                 <el-radio-button value="cpk">CPK 波动</el-radio-button>
@@ -65,26 +65,37 @@
             </div>
           </div>
           <div id="tour-cpk-controls" style="display: flex; align-items: center; gap: 16px;">
-            <!-- Yield 不良视图下的报警模式选择 (放置在 Main Hall 前面，无图标) -->
+            <!-- Yield 不良视图下的报警模式选择 (极简纯文字无框展开折叠) -->
             <template v-if="trendViewMode !== 'cpk'">
-              <div class="anomaly-alarm-controls" style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 12px; color: var(--el-text-color-regular); font-weight: 600;">
-                  报警模式:
-                </span>
-                <el-checkbox-group v-model="anomalyAlarmModes" size="small">
-                  <el-checkbox value="consecutive">
-                    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
-                      <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f97316;"></span>
-                      连续两天上涨
-                    </span>
-                  </el-checkbox>
-                  <el-checkbox value="top5">
-                    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
-                      <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444;"></span>
-                      极值点 Top 5
-                    </span>
-                  </el-checkbox>
-                </el-checkbox-group>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <el-button
+                  size="small"
+                  plain
+                  class="alarm-toggle-btn-capsule"
+                  :class="{ 'is-active': alarmModesExpanded }"
+                  @click="alarmModesExpanded = !alarmModesExpanded"
+                  title="点击展开/折叠报警模式筛选"
+                >
+                  <span>报警模式</span>
+                  <span class="alarm-arrow">{{ alarmModesExpanded ? '▾' : '▸' }}</span>
+                </el-button>
+
+                <div v-show="alarmModesExpanded" style="display: flex; align-items: center;">
+                  <el-checkbox-group v-model="anomalyAlarmModes" size="small">
+                    <el-checkbox value="consecutive">
+                      <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
+                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f97316;"></span>
+                        连续两天上涨
+                      </span>
+                    </el-checkbox>
+                    <el-checkbox value="top5">
+                      <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px;">
+                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444;"></span>
+                        极值点 Top 5
+                      </span>
+                    </el-checkbox>
+                  </el-checkbox-group>
+                </div>
               </div>
             </template>
 
@@ -100,16 +111,7 @@
                 <el-radio-button value="p4">四期</el-radio-button>
               </el-radio-group>
 
-              <el-button
-                size="small"
-                :icon="RefreshRight"
-                plain
-                style="margin-left: 4px; font-weight: 500;"
-                title="清除选定日期、规格聚焦及筛选，恢复总体趋势图"
-                @click="resetOverallTrend"
-              >
-                重置
-              </el-button>
+
             </div>
             
             <template v-if="trendViewMode === 'cpk'">
@@ -170,17 +172,31 @@
           <el-empty description="请点击上方 CPK 趋势图的任意数据点以载入该天的规格预警分析" :image-size="60" />
         </div>
         <template v-else>
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-bottom: 8px; flex-shrink: 0;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid var(--el-border-color-lighter); padding-bottom: 8px; flex-shrink: 0; margin-bottom: 8px;">
             <div class="card-title" style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;">
               <span style="white-space: nowrap; font-weight: 600; font-size: 13px;">
                 核心规格行动表
               </span>
-              <span
-                v-if="tab1SelectedArticle"
-                class="spec-focus-badge"
-              >
-                已聚焦: {{ tab1SelectedArticle }}
-              </span>
+              <!-- 日期标签 (极简纯文字，无图标) -->
+              <el-tooltip v-if="selectedTrendDate" content="点击清除日期选择，返回全周期总览" placement="top">
+                <span
+                  class="filter-pill-tag pill-date"
+                  @click="handleClearDate"
+                >
+                  <span>{{ selectedTrendDate }}</span>
+                  <span class="pill-close">✕</span>
+                </span>
+              </el-tooltip>
+              <!-- 规格标签 (极简纯文字，无图标) -->
+              <el-tooltip v-if="tab1SelectedArticle" content="点击清除规格聚焦，展示当天全量预警规格" placement="top">
+                <span
+                  class="filter-pill-tag pill-spec"
+                  @click="resetTab1Article"
+                >
+                  <span>{{ tab1SelectedArticle }}</span>
+                  <span class="pill-close">✕</span>
+                </span>
+              </el-tooltip>
               <el-tooltip placement="top" raw-content>
                 <template #content>
                   <div style="max-width: 280px; font-size: 12px; line-height: 1.5;">
@@ -202,25 +218,16 @@
               </el-tooltip>
             </div>
             <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap;">
-              <template v-if="tab1SelectedArticle">
-                <el-button
-                  size="small"
-                  class="btn-warm-outline"
-                  :icon="RefreshLeft"
-                  @click="resetTab1Article"
-                >
-                  查看全量
-                </el-button>
-                <el-button
-                  size="small"
-                  class="btn-warm-primary"
-                  :icon="TrendCharts"
-                  @click="handleOpenBarcodeMeasurements(tab1SelectedArticle)"
-                >
-                  单规格折线图
-                </el-button>
-              </template>
-              <template v-else>
+              <el-button
+                v-if="tab1SelectedArticle"
+                size="small"
+                class="btn-warm-primary"
+                :icon="TrendCharts"
+                @click="handleOpenBarcodeMeasurements(tab1SelectedArticle)"
+              >
+                单规格折线图
+              </el-button>
+              <template v-if="!tab1SelectedArticle">
                 <template v-if="cpkIndicator !== 'weight'">
                   <span style="font-size: 12px; color: var(--el-text-color-regular);">CPK:</span>
                   <el-input-number
@@ -237,43 +244,6 @@
                 <span style="font-size: 12px; color: var(--el-text-color-regular); margin-left: 2px;">产量:</span>
                 <el-input-number v-model="warningMinSamples" :min="1" :max="1000" size="small" style="width: 75px;" @change="loadWarningArticles" />
               </template>
-            </div>
-          </div>
-          
-          <!-- 公式的警示说明框 (象牙暖金全局统一风格) -->
-          <div style="padding: 0 16px 8px 16px; flex-shrink: 0;">
-            <div
-              :style="{
-                padding: '7px 12px',
-                borderRadius: '8px',
-                width: '100%',
-                backgroundColor: tab1SelectedArticle ? '#fffbeb' : '#fafaf9',
-                backgroundImage: tab1SelectedArticle ? 'linear-gradient(135deg, #fffdf5 0%, #fffbeb 100%)' : 'none',
-                border: tab1SelectedArticle ? '1px solid #fde68a' : '1px solid #e7e5e4',
-                borderLeft: tab1SelectedArticle ? '3px solid #f59e0b' : '3px solid #cbd5e1',
-                boxShadow: tab1SelectedArticle ? '0 1px 3px rgba(245, 158, 11, 0.08)' : 'none',
-                transition: 'all 0.25s ease'
-              }"
-            >
-              <div style="font-size: 12px; line-height: 1.5; display: flex; flex-direction: column; gap: 3px;">
-                <template v-if="tab1SelectedArticle">
-                  <div style="color: #92400e; font-weight: 700; display: flex; align-items: center; gap: 6px;">
-                    <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span>
-                    已聚焦规格：{{ tab1SelectedArticle }}（{{ selectedTrendDate }} 质量追溯联动中）
-                  </div>
-                  <div style="color: #78350f; font-size: 11px; font-weight: 500;">
-                    下方表格已高亮标示该规格；右侧工序流转与批次数据已同步联动。点击上方“查看全量”按钮可清除聚焦。
-                  </div>
-                </template>
-                <template v-else>
-                  <div style="color: #44403c; font-weight: 600;">
-                    预警规则：🔴 红色预警（调参恶化 / 持续霸榜）> 🟠 橙色预警（降幅超 35% / 持续在榜）> 🟡 黄色预警
-                  </div>
-                  <div style="color: #78716c; font-size: 11px; font-weight: normal;">
-                    说明：同预警等级内严格按负向拉低贡献由重到轻排列。悬浮规格可查看完整指标卡片，点击任意行可下钻联动右侧流转图。
-                  </div>
-                </template>
-              </div>
             </div>
           </div>
           
@@ -331,12 +301,7 @@
                 机台组合分析
               </el-button>
 
-              <el-tag v-if="tab1SelectedArticle" size="small" type="success">
-                规格: {{ tab1SelectedArticle }}
-              </el-tag>
-              <el-tag v-else size="small" type="warning" effect="plain">
-                未选定规格
-              </el-tag>
+
             </div>
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
               <div style="display: flex; align-items: center; gap: 6px;">
@@ -375,6 +340,7 @@
               :indicator="cpkIndicator"
               :tolerance="filterStore.weightTolerance"
               :article="tab1SelectedArticle"
+              :warning-machine-map="currentSpecWarningMachineMap"
               @open-cgrs="handleOpenCgrs"
             />
             <!-- Tab 3: 全量数据集最佳生产路径桑基图 -->
@@ -406,12 +372,7 @@
               <div class="card-title" style="display: inline-flex; align-items: center; gap: 6px;">
                 <span>物料批次分析</span>
               </div>
-              <el-tag v-if="tab1SelectedArticle" size="small" type="success">
-                规格: {{ tab1SelectedArticle }}
-              </el-tag>
-              <el-tag v-else size="small" type="warning" effect="plain">
-                未选定规格
-              </el-tag>
+
               <span style="font-size: 12px; color: var(--el-text-color-secondary);">
                 | 日期: {{ selectedTrendDate }}
               </span>
@@ -613,7 +574,9 @@ watch(() => filterStore.selectedArticle, (newVal) => {
     tab1SelectedArticle.value = newVal
     loadCpkTrend()
     if (selectedTrendDate.value) {
-      loadWarningArticles()
+      if (!articles.value || articles.value.length === 0) {
+        loadWarningArticles()
+      }
       loadLotCpkTrend()
     }
     if (machineTabActive.value === 'sankey_flow') {
@@ -648,6 +611,7 @@ const anomalyData = ref([])
 const anomalyLoading = ref(false)
 const anomalyError = ref(null)
 const anomalyAlarmModes = ref(['consecutive', 'top5'])
+const alarmModesExpanded = ref(false)
 const lastLoadedCpkIndicator = ref(null)
 
 async function loadCpkTrend() {
@@ -807,25 +771,45 @@ function onTab1ArticleDrill(article) {
     resetTab1Article()
   } else {
     tab1SelectedArticle.value = article
+    filterStore.selectedArticle = article
+    // 纯粹加载右侧工序流转与批次追溯，绝不调用 loadAnomalyTrend()，绝不触发指标切换，保持左侧列表稳定
+    loadMachineProcessSankey()
+    loadLotCpkTrend()
+    if (machineTabActive.value === 'best_sankey_flow') {
+      loadMachineBestProcessSankey()
+    }
     if (trendViewMode.value === 'cpk') {
       loadCpkTrend()
-    } else {
-      loadAnomalyTrend()
     }
-    loadLotCpkTrend()
-    // 若当前正在新手引导第 2 步 (索引 1: 核心规格行动表)，点击规格钻取自动平滑进入第 3 步 (工序流转)
     advanceTourIfActive(1)
   }
 }
 
 function resetTab1Article() {
   tab1SelectedArticle.value = null
+  filterStore.selectedArticle = null
+  if (selectedTrendDate.value) {
+    loadWarningArticles()
+    loadMachineProcessSankey()
+    loadLotCpkTrend()
+  }
+  if (trendViewMode.value === 'cpk') {
+    loadCpkTrend()
+  }
+}
+
+function handleClearDate() {
+  selectedTrendDate.value = null
+  tab1SelectedArticle.value = null
+  filterStore.selectedArticle = null
+  articles.value = []
+  sankeyData.value = { nodes: [], links: [] }
+  lotCpkData.value = []
   if (trendViewMode.value === 'cpk') {
     loadCpkTrend()
   } else {
     loadAnomalyTrend()
   }
-  loadLotCpkTrend()
 }
 
 const trendChartKey = ref(0)
@@ -882,11 +866,23 @@ function applyTopProcessAndIndicatorLinkage(date) {
     topProcess = processItems[0]?.name
   }
 
-  // 2. 更新 filterStore 中的指标分组置顶及详细指标增幅降序列表
-  filterStore.updateIndicatorPriority(topProcess, item.detail_indicators, date)
+  // 2. 统计该工序下日异常增幅最大的详细指标 (规则：当日异常数少于 50 的指标忽略，自动顺延寻找首个 count >= 50 的指标)
+  let topIndicator = item.top_indicator
+  if (!topIndicator) {
+    const procInds = item.detail_indicators?.[topProcess] || []
+    const validCands = procInds.filter(it => (it.count || 0) >= 50)
+    if (validCands.length > 0) {
+      topIndicator = validCands[0].key
+    } else if (procInds.length > 0) {
+      const sortedByCount = [...procInds].sort((a, b) => (b.count || 0) - (a.count || 0))
+      topIndicator = sortedByCount[0]?.key
+    }
+  }
 
-  // 3. 统计该工序下日异常增幅最大的详细指标，并自动优先选中 (仅在 Yield 不良模式下)
-  const topIndicator = item.top_indicator || item.detail_indicators?.[topProcess]?.[0]?.key
+  // 3. 更新 filterStore 中的指标分组置顶，并将推荐高亮 isMax 精准赋予顺延选中的 topIndicator
+  filterStore.updateIndicatorPriority(topProcess, item.detail_indicators, date, topIndicator)
+
+  // 4. 自动优先选中该指标 (仅在 Yield 不良模式下)
   if (topIndicator && filterStore.cpkIndicator !== topIndicator) {
     filterStore.setCpkIndicator(topIndicator)
   }
@@ -904,9 +900,9 @@ function handleDateSelect(date) {
     machineCpkDateRange.value = [fmt(dStart), date]
   }
 
-  // 仅在 Yield 不良视图下才执行工序与最大增幅详细指标联动自动切换；
-  // 当在 CPK 这一页选择日期、或切回 CPK 页面切换日期时，固定当前指标，绝不自动切换指标，只切换日期
-  if (trendViewMode.value !== 'cpk') {
+  // 仅在 Yield 不良视图且未锁定单规格时才执行工序与最大增幅详细指标联动自动切换；
+  // 当在 CPK 这一页选择日期、或已锁定单规格跨日期分析时，固定当前指标，绝不自动切换指标
+  if (trendViewMode.value !== 'cpk' && !tab1SelectedArticle.value) {
     const hasPrevNext = anomalyData.value?.[0]?.detail_indicators && 
       Object.values(anomalyData.value[0].detail_indicators)?.[0]?.[0]?.prev_date !== undefined
 
@@ -934,6 +930,25 @@ const onlyDeclining = ref(true)
 const warningMinSamples = ref(30)
 const warningMaxCpk     = ref(0.9)
 
+// 当前选定规格的预警机台映射（机台号大写 -> warning_level: 'red' | 'orange' | 'yellow'）
+const currentSpecWarningMachineMap = computed(() => {
+  if (!tab1SelectedArticle.value || !articles.value || articles.value.length === 0) {
+    return {}
+  }
+  const map = {}
+  const severityOrder = { red: 3, orange: 2, yellow: 1 }
+  articles.value.forEach(item => {
+    if (item.article10 === tab1SelectedArticle.value && item.warning_machine) {
+      const mach = String(item.warning_machine).trim().toUpperCase()
+      const lvl = item.warning_level || 'yellow'
+      if (!map[mach] || (severityOrder[lvl] || 0) > (severityOrder[map[mach]] || 0)) {
+        map[mach] = lvl
+      }
+    }
+  })
+  return map
+})
+
 async function loadWarningArticles() {
   if (!selectedTrendDate.value) {
     articles.value = []
@@ -953,6 +968,7 @@ async function loadWarningArticles() {
       phase: filterStore.selectedPhase,
       max_cpk: warningMaxCpk.value
     }
+    // 当处于单规格锁定跨日期追踪模式时，带上 article10 查看该规格在当前日期下的情况
     if (tab1SelectedArticle.value) {
       params.article10 = tab1SelectedArticle.value
     }
@@ -1550,6 +1566,63 @@ onMounted(async () => {
   transform: translateY(-1px);
 }
 
+/* ── 核心规格行动表顶部极简纯文字状态胶囊标签 ── */
+.filter-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  line-height: 22px;
+  padding: 0 9px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 4px;
+}
+
+.pill-date {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+.pill-date:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.pill-spec {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  box-shadow: 0 1px 2px rgba(245, 158, 11, 0.08);
+}
+
+.pill-spec:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #78350f;
+  box-shadow: 0 2px 5px rgba(245, 158, 11, 0.18);
+}
+
+.pill-close {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  margin-left: 2px;
+}
+
+.filter-pill-tag:hover .pill-close {
+  opacity: 1;
+  color: #dc2626;
+}
+
 .btn-warm-primary {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
   border: 1px solid #d97706 !important;
@@ -1566,43 +1639,44 @@ onMounted(async () => {
   transform: translateY(-1px);
 }
 
-/* ── 整体指标预览 Tab 切换控件 (现代极简 Segmented Control) ── */
-.trend-mode-switch {
-  margin-left: 10px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  padding: 2px;
-  border-radius: 8px;
-  display: inline-flex;
-}
-
-.trend-mode-switch :deep(.el-radio-button) {
-  border: none !important;
-}
-
-.trend-mode-switch :deep(.el-radio-button__inner) {
-  border-radius: 6px !important;
-  border: none !important;
-  margin: 0 !important;
-  padding: 5px 14px !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  color: #64748b !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  user-select: none !important;
-}
-
-.trend-mode-switch :deep(.el-radio-button__inner:hover) {
-  color: #0f172a !important;
-}
-
-.trend-mode-switch :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background: #ffffff !important;
-  color: #0f172a !important;
+/* ── 报警模式胶囊按钮展开折叠 (与重置按钮保持完全一致规格) ── */
+.alarm-toggle-btn-capsule {
+  font-family: 'JetBrains Mono', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif !important;
   font-weight: 700 !important;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  color: #d97706 !important;
+  border-color: #fde68a !important;
+  background: #ffffff !important;
+  padding: 0 10px !important;
+  height: 24px !important;
+  font-size: 12px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
+
+.alarm-toggle-btn-capsule:hover {
+  color: #b45309 !important;
+  border-color: #f59e0b !important;
+  background: #fffdf5 !important;
+}
+
+.alarm-toggle-btn-capsule.is-active {
+  color: #92400e !important;
+  border-color: #f59e0b !important;
+  background: #fffbeb !important;
+  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.15) !important;
+}
+
+.alarm-arrow {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #f59e0b;
+  transition: color 0.15s ease;
+}
+
+.alarm-toggle-btn-capsule:hover .alarm-arrow {
+  color: #d97706;
+}
+
+
 </style>
 

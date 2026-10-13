@@ -895,12 +895,15 @@ def get_top_warning_machines(
 
 
 
-def get_best_tu_machine_for_spec(article10: str, indicator: str = "rfpp", min_samples: int = 10):
+def get_best_tu_machine_for_spec(article10: str, indicator: str = "rfpp", min_samples: int = 10, phase: Optional[str] = None):
     """
     计算该规格在全量数据集下的最佳 TU (终检) 机台及指标表现 (复用全量最佳路径核心算法)
     """
     try:
+        from backend.core.time_utils import get_phase_sql_condition
         where_clause = "WHERE article10 = ?"
+        if phase:
+            where_clause += get_phase_sql_condition(phase)
         params = [article10]
 
         if indicator == "weight":

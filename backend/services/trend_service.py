@@ -709,8 +709,15 @@ def get_trend_production_anomaly(
             top_proc = process_rank[0]["name"]
             item["top_process"] = top_proc
 
-            # 统计该第一工序下增幅最大的详细指标
-            top_ind = detail_indicators[top_proc][0]["key"] if detail_indicators.get(top_proc) else None
+            # 统计该第一工序下增幅最大的详细指标 (过滤规则：当日异常数少于 50 的指标进行忽略，自动顺延寻找首个 count >= 50 且增幅最大的指标)
+            proc_inds = detail_indicators.get(top_proc, [])
+            valid_candidates = [it for it in proc_inds if (it.get("count") or 0) >= 50]
+            if valid_candidates:
+                top_ind = valid_candidates[0]["key"]
+            else:
+                # 兜底：若全量指标均 < 50，自动顺延退守选取数量 count 最大的指标
+                sorted_by_count = sorted(proc_inds, key=lambda x: (x.get("count") or 0), reverse=True)
+                top_ind = sorted_by_count[0]["key"] if sorted_by_count else (proc_inds[0]["key"] if proc_inds else None)
             item["top_indicator"] = top_ind
 
         # 清理临时字段以精简数据传输体积

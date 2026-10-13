@@ -877,3 +877,29 @@
    - **机台预警下钻**：剩余的 `0311573010`（命中 3 台报警机台）与 `0312930010`（命中 2 台报警机台）成功匹配到报警机台并展示在行动表中。
 3. **对比与结论**：
    - RFPP/LFPP/BULS 的配方覆盖率达 99.5%，而 PLYS 仅 0.76%，此为行业指标特性导致的数据分布差异，系统计算逻辑与过滤规则表现完全正常。
+
+---
+
+## 33. 核心规格行动建议表格修复与工序桑基图预警对齐统一 (2026-10-13)
+
+### 1. 核心规格及行动建议表格缺陷修复与视觉清理
+- **多行合并单元格（rowspan > 1）选中穿透 Bug 修复**：
+  - **原因**：当同一规格包含多台预警机台时，规格列跨行合并（`rowspan > 1`），第二行及后续行不渲染规格列 `<td>`。原 CSS 选择器 `:deep(.el-table .row-selected td:first-child)` 会将内嵌橙色指示条（`box-shadow: inset 4px 0 0 #f59e0b`）误应用到第二行首个单元格（即「预警机台」列），导致表格中间规格与机台之间出现垂直贯穿的橙色竖线。
+  - **解决方案**：在 [CoreSpecActionTable.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/tables/CoreSpecActionTable.vue) 中为「预警规格」列显式指定 `class-name="col-spec-code"`，并将 CSS 高光边框规则精准绑定至 `:deep(.el-table .row-selected td.col-spec-code)`，彻底解决单元格跨行导致的多余中间竖线。
+- **清理底部预警规则卡片**：
+  - 在 [Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue) 中彻底移除表格底部的静态预警规则说明卡片（`<!-- 公式的警示说明框 -->`），使表格自适应铺满卡片主体。
+- **移除行动措施悬浮层（Tooltip）**：
+  - 在 [CoreSpecActionTable.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/tables/CoreSpecActionTable.vue) 的「行动措施」列中移除了外层的 `<el-tooltip>`，悬浮机台推荐参数按钮或标签时不再弹出多余黑底说明弹层。
+
+### 2. 单日生产工序桑基图预警节点：直接复用核心规格接口与颜色联动
+- **历史缺陷分析**：
+  - 单日工序桑基图服务（[process_flow_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/process_flow_service.py)）历史上调用了独立的 `get_top_warning_machines` 启发式计算模块，且硬编码仅取 1 台设备标为红色，排除了动平衡 TB 设备，与左侧「重点规格及行动建议」表格结果脱节。
+- **直接复用权威计算接口**：
+  - **后端（[process_flow_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/process_flow_service.py)）**：
+    彻底废弃独立旧函数，**直接调用并复用** `article_service.py` 中的 `get_warning_cpk` 接口。根据选定规格与日期，直接获取其所有预警机台及其精确的预警等级（🔴 `red`、🟠 `orange`、🟡 `yellow`），赋予到桑基图的各个机台节点上。
+  - **前端（[MachineProcessSankeyChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/MachineProcessSankeyChart.vue) & [Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue)）**：
+    - `Dashboard.vue` 通过 `currentSpecWarningMachineMap` 提取选中规格的预警机台等级映射并传递给桑基图；
+    - 桑基图节点严格按左侧表格对齐（🔴 红色预警机台、🟠 橙色预警机台、🟡 黄色预警机台、⚪ 灰色正常流转机台）；
+    - 图表上方图例分类与 Tooltip 对应升级为四级联动说明。
+- **节点边框样式优化（去除深色描边）**：
+  - 响应视觉优化需求，在 [MachineProcessSankeyChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/MachineProcessSankeyChart.vue) 中将节点边框设为无（`borderWidth: 0, borderColor: 'transparent'`），去除高对比度深色描边线，保留平滑的纯色填充与同色系发光效果。

@@ -285,19 +285,37 @@ def get_process_sankey(
                         col_name = str(m_info.get("workcenter_col"))
                         machine_cpk_lookup_details[(col_name, m_name)] = m_info
 
-        # 基于方案一（全局机台贡献分析）计算决策树中最核心负面影响机台并标红
-        _tw = _get_top_warning_provider()
-        top_warn_list = _tw(
-            n=10,
-            article10=article10,
-            indicator=indicator,
-            start_date=start_date,
-            end_date=end_date,
-            target_date=target_date,
-            min_samples=min_samples
-        ) if _tw else []
-        if top_warn_list:
-            warning_machines[top_warn_list[0]["machine"]] = 1.0
+                # 直接复用核心规格行动建议（get_warning_cpk）计算接口，确保预警机台及等级100%一致
+        warning_machines = {}
+        warning_machine_levels = {}
+        top_warn_list = []
+        try:
+            from backend.services.article_service import get_warning_cpk
+            warn_res = get_warning_cpk(
+                article10=article10,
+                study_from=target_date,
+                study_to=target_date,
+                indicator=indicator,
+                min_samples=1
+            )
+            if warn_res and warn_res.get("status") == "success":
+                sev_order = {"red": 3, "orange": 2, "yellow": 1}
+                for w_item in warn_res.get("data", []):
+                    wm = str(w_item.get("warning_machine") or "").strip().upper()
+                    w_lvl = w_item.get("warning_level") or "yellow"
+                    if wm and wm != "-":
+                        warning_machines[wm] = 1.0
+                        old_lvl = warning_machine_levels.get(wm)
+                        if not old_lvl or sev_order.get(w_lvl, 0) > sev_order.get(old_lvl, 0):
+                            warning_machine_levels[wm] = w_lvl
+                        top_warn_list.append({
+                            "machine": wm,
+                            "warning_level": w_lvl,
+                            "cpk_pct_change": w_item.get("cpk_pct_change"),
+                            "action_text": w_item.get("action_text")
+                        })
+        except Exception as warn_err:
+            print(f"[process_flow_service] Error reusing get_warning_cpk: {warn_err}")
 
         where_parts = ["article10 = ?"]
         params = [article10]
@@ -496,8 +514,10 @@ def get_process_sankey(
             d_val = depth_map.get(prefix, 0)
             is_hl = False
             is_max_tu = (n == f"终检TU_{highest_tu_machine}") if highest_tu_machine else False
-            is_warn = (m_code in warning_machines) and (prefix != "动平衡TB")
-            w_score = warning_machines.get(m_code, 0.0)
+            m_code_upper = m_code.upper()
+            is_warn = (m_code_upper in warning_machines) or (m_code in warning_machines)
+            w_lvl = warning_machine_levels.get(m_code_upper) or warning_machine_levels.get(m_code)
+            w_score = warning_machines.get(m_code_upper, 0.0) or warning_machines.get(m_code, 0.0)
 
             col_name = sankey_prefix_to_col.get(prefix)
             
@@ -537,6 +557,7 @@ def get_process_sankey(
                     "is_highlighted": is_hl,
                     "is_max_tu": is_max_tu,
                     "is_warning_machine": is_warn,
+                    "warning_level": w_lvl,
                     "warning_score": round(w_score, 2),
                     "spec_cpk": round(spec_cpk, 2) if spec_cpk is not None else None,
                     "spec_ratio": round(spec_ratio, 2) if spec_ratio is not None else None,
@@ -565,6 +586,7 @@ def get_process_sankey(
                     "is_highlighted": is_hl,
                     "is_max_tu": is_max_tu,
                     "is_warning_machine": is_warn,
+                    "warning_level": w_lvl,
                     "warning_score": round(w_score, 2),
                     "spec_cpk": round(spec_cpk, 2) if spec_cpk is not None else None,
                     "spec_std": round(spec_std, 2) if spec_std is not None else None,

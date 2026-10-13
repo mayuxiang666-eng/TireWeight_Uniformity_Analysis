@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-生产日期与班次 SQL 过滤条件构造模块
+Production time & phase SQL utility module
 """
-from typing import Optional
+from typing import Optional, Dict
 
 
 def build_production_time_where(
@@ -13,13 +13,7 @@ def build_production_time_where(
     shift: Optional[str] = None
 ) -> str:
     """
-    构造 DuckDB SQL WHERE 时间条件。
-    天的划分：精细到分，从第一天 08:00:00 到第二天 08:00:00 作为一天的划分。
-    班组划分：
-      - 'all' / None: 08:00 ~ 次日08:00
-      - 'morning': 08:00 ~ 16:00
-      - 'middle': 16:00 ~ 24:00
-      - 'night': 24:00 ~ 08:00 (次日00:00~08:00)
+    Build DuckDB SQL WHERE conditions for production time and shift windows.
     """
     col_ref = time_col if time_col else "tu_first_loc_timestamp"
     ts_expr = f"TRY_CAST({col_ref} AS TIMESTAMP)"
@@ -50,15 +44,69 @@ def build_production_time_where(
 
 def get_phase_sql_condition(phase: Optional[str]) -> str:
     """
-    根据 phase 参数生成 DuckDB SQL 过滤条件
-    - 'p3': ct_shop 为空或不含 'P4' / 'p4' (三期)
-    - 'p4': ct_shop 包含 'P4' / 'p4' (四期)
-    - 'all' 或 None: 不限制期别
+    Convert phase string to DuckDB SQL WHERE filter on ct_shop:
+    - P3 (三期): ct_shop is null or ct_shop does not contain 'P4'
+    - P4 (四期): ct_shop is not null and ct_shop contains 'P4'
+    - 'all' or None: no filter
     """
-    if not phase or phase == "all":
+    if not phase or str(phase).lower() == "all":
         return ""
-    if phase == "p3":
+    p_lower = str(phase).lower()
+    if p_lower in ("p3", "3", "phase3", "三期"):
         return " AND (ct_shop IS NULL OR UPPER(CAST(ct_shop AS VARCHAR)) NOT LIKE '%P4%')"
-    if phase == "p4":
+    if p_lower in ("p4", "4", "phase4", "四期"):
         return " AND (ct_shop IS NOT NULL AND UPPER(CAST(ct_shop AS VARCHAR)) LIKE '%P4%')"
     return ""
+
+
+_MACHINE_PHASE_CACHE: Dict[str, str] = {}
+
+
+def init_machine_phase_cache(con=None) -> Dict[str, str]:
+    """
+    Precompute plant-wide machine phase mapping (P3 / P4) cached in memory.
+    """
+    global _MACHINE_PHASE_CACHE
+    try:
+        if con is None:
+            from backend.core.db import db_conn
+            con = db_conn
+        
+        tables = [r[0] for r in con.execute("SHOW TABLES").fetchall()]
+        if 'clean_yield' not in tables:
+            return _MACHINE_PHASE_CACHE
+            
+        sql = """
+            SELECT 
+                m,
+                CASE WHEN SUM(CASE WHEN UPPER(CAST(ct_shop AS VARCHAR)) LIKE '%P4%' THEN 1 ELSE 0 END) >
+                          SUM(CASE WHEN UPPER(CAST(ct_shop AS VARCHAR)) NOT LIKE '%P4%' OR ct_shop IS NULL THEN 1 ELSE 0 END)
+                     THEN 'P4' ELSE 'P3' END as phase
+            FROM (
+                SELECT ct_workcenter as m, ct_shop FROM clean_yield WHERE ct_workcenter IS NOT NULL AND ct_workcenter != ''
+                UNION ALL
+                SELECT gt_workcenter as m, ct_shop FROM clean_yield WHERE gt_workcenter IS NOT NULL AND gt_workcenter != ''
+                UNION ALL
+                SELECT tu_first_workcenter as m, ct_shop FROM clean_yield WHERE tu_first_workcenter IS NOT NULL AND tu_first_workcenter != ''
+            )
+            GROUP BY 1
+        """
+        rows = con.execute(sql).fetchall()
+        _MACHINE_PHASE_CACHE = {str(r[0]).strip().upper(): str(r[1]).strip().upper() for r in rows if r[0]}
+        print(f"[time_utils] Plant machine phase cache warmed up with {len(_MACHINE_PHASE_CACHE)} machines.")
+    except Exception as e:
+        print(f"[time_utils] init_machine_phase_cache error: {e}")
+    return _MACHINE_PHASE_CACHE
+
+
+def get_machine_phase(machine: str) -> str:
+    """
+    Get machine phase ('P4' or 'P3') with O(1) in-memory lookup (0ms).
+    """
+    if not machine:
+        return "P3"
+    mach_clean = str(machine).strip().upper()
+    global _MACHINE_PHASE_CACHE
+    if not _MACHINE_PHASE_CACHE:
+        init_machine_phase_cache()
+    return _MACHINE_PHASE_CACHE.get(mach_clean, "P3")

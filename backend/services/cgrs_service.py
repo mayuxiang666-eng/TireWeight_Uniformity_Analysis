@@ -23,7 +23,7 @@ from backend.core.cache_utils import (
     _recommend_cache_get,
     _recommend_cache_set
 )
-from backend.core.time_utils import build_production_time_where, get_phase_sql_condition
+from backend.core.time_utils import get_machine_phase,  build_production_time_where, get_phase_sql_condition
 
 def get_cgrs_records(
     workcenter: str,
@@ -1601,6 +1601,8 @@ def get_cgrs_recommended_params(
         spec_prefix7 = article10[:7] if len(article10) >= 7 else article10
         is_cu = machine.startswith("CU") or machine.startswith("CT") or workcenter_type.lower() in ("ct", "cu")
         stage_name_cn = "硫化 CT" if is_cu else "成型 GT"
+        target_phase = get_machine_phase(machine)
+        phase_sql = get_phase_sql_condition(target_phase.lower())
 
         # 1. 第一阶段：严密评估本机台过去 30 天方案 B 黄金调参事件
         same_best = _eval_machine_cgrs_strictly_plan_b(
@@ -1656,6 +1658,7 @@ def get_cgrs_recommended_params(
                       AND ct_workcenter NOT IN ('{cands_sql}')
                       AND TRY_CAST(ct_loc_timestamp AS DATE) <= '{ref_date}'::DATE
                       AND TRY_CAST(ct_loc_timestamp AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
+                      {phase_sql}
                 """
             else:
                 if machine.startswith("TB2"):
@@ -1671,6 +1674,7 @@ def get_cgrs_recommended_params(
                       AND gt_workcenter NOT IN ('{cands_sql}')
                       AND TRY_CAST(tu_first_shift_date AS DATE) <= '{ref_date}'::DATE
                       AND TRY_CAST(tu_first_shift_date AS DATE) >= ('{ref_date}'::DATE - INTERVAL 30 DAY)
+                      {phase_sql}
                 """
 
             peer_machines = [r['wc'] for r in qry(sql_peers) if r.get('wc')]
@@ -1726,9 +1730,11 @@ def get_cgrs_recommended_params(
             return {
                 "status": "success",
                 "has_recommendation": False,
+                "target_phase": target_phase,
+                "source_phase": None,
                 "reason": reason,
-                "recommend_title": f"未查询到【{stage_name_cn}】工艺调参修改记录",
-                "message": f"在观察日 [{ref_date}] 前 30 天内，未查询到生产规格 [{article10}] 带来质量改善的工艺调参修改记录。",
+                "recommend_title": f"未查询到【{target_phase} {stage_name_cn}】有效工艺推荐",
+                "message": f"在观察日 [{ref_date}] 前 30 天内，同分期（{target_phase}）未查询到生产规格 [{article10}] 带来受控质量改善的工艺调参修改记录。",
                 "params": []
             }
 
@@ -1775,19 +1781,37 @@ def get_cgrs_recommended_params(
 
         recommend_category = "same_machine" if source_type == "same_machine_best" else "cross_machine"
 
-        if is_optimal_no_diff:
-            rec_title = f"机台工艺参数已达到历史最佳基准 ({chosen_event['event_time']})"
-            rec_desc = f"比对本机台及同工段兄弟机台后，当前参数已与历史最佳水平 (CPK: {ca:.2f}) 保持一致，未查询到差异，建议维持现有稳定工艺。"
-        elif source_type == "same_machine_best":
-            rec_title = f"建议复原至本机台 [{machine}] 历史最佳调参 ({chosen_event['event_time']})"
-            rec_desc = f"在观察日 [{ref_date}] 前 30 天内，本机台曾于 {chosen_event['event_time']} 进行工艺优化，调参后 CPK 达到 {ca:.2f}（提升 {yoy:+.1f}%）。" if (ca and yoy) else f"在观察日 [{ref_date}] 前 30 天内匹配到本机台优化调参版本。"
+        # 零变化过滤：如果修改参数没有变化（即 delta 全为 0 或 is_optimal_no_diff），直接显示未查询到有效参数
+        all_deltas_zero = is_optimal_no_diff or (all(p.get("delta") in ("0", "+0", "-0") for p in formatted_params) if formatted_params else True)
+
+        if all_deltas_zero:
+            return sanitize_data({
+                "status": "success",
+                "has_recommendation": False,
+                "reason": reason,
+                "target_phase": target_phase,
+                "source_phase": get_machine_phase(source_mach),
+                "target_machine": machine,
+                "target_spec": article10,
+                "target_date": ref_date,
+                "recommend_title": "未查询到有效推荐参数",
+                "message": f"机台 [{machine}] 当前工艺参数已处于同分期（{target_phase}）最佳基准状态，修改变化量均为 0，暂无更优参数可调整。",
+                "params": [],
+                "is_optimal_no_diff": True
+            })
+
+        if source_type == "same_machine_best":
+            rec_title = f"建议复原该机台 [{machine}] 历史最优调参 ({chosen_event['event_time']})"
+            rec_desc = f"在观察日 [{ref_date}] 前 30 天内，本机台于 {chosen_event['event_time']} 有过更优工艺参数，改后 CPK 达到 {ca:.2f}（提升 {yoy:+.1f}%）。" if (ca and yoy) else f"在观察日 [{ref_date}] 前 30 天内匹配到本机台优化调参版本。"
         else:
-            rec_title = f"推荐参考生产该规格的标杆机台 [{source_mach}] 历史最佳参数 ({chosen_event['event_time']})"
-            rec_desc = f"本机台当前参数已到位，系统为您自动穿透匹配到生产该规格的工段标杆机台 [{source_mach}] 最佳工艺设定，调参后该机台 CPK 达到 {ca:.2f}。"
+            rec_title = f"推荐参考同分期标杆机台 [{source_mach}] 历史最优参数 ({chosen_event['event_time']})"
+            rec_desc = f"该机台当前处于次优状态，系统为您自动穿透匹配到同分期（{target_phase}）标杆机台 [{source_mach}] 的工艺设定，改后该机台 CPK 达到 {ca:.2f}。"
 
         return sanitize_data({
             "status": "success",
             "has_recommendation": True,
+            "target_phase": target_phase,
+            "source_phase": get_machine_phase(source_mach),
             "reason": reason,
             "recommend_category": recommend_category,
             "source_type": source_type,
@@ -1819,7 +1843,7 @@ def get_cgrs_recommended_params(
 
 
 
-def _get_same_section_machines(article: str, target_date: str, days: int = 30, section: str = "gt") -> list:
+def _get_same_section_machines(article: str, target_date: str, days: int = 30, section: str = "gt", phase: Optional[str] = None) -> list:
     """获取过去 30 天生产过该规格的机台列表 (严格强规格锁定)"""
     wc_col = "ct_workcenter" if section.lower() in ("cu", "ct") else "gt_workcenter"
     spec_prefix7 = article[:7] if len(article) >= 7 else article
@@ -1831,6 +1855,7 @@ def _get_same_section_machines(article: str, target_date: str, days: int = 30, s
           AND {wc_col} != ''
           AND TRY_CAST(tu_first_shift_date AS DATE) <= ?::DATE
           AND TRY_CAST(tu_first_shift_date AS DATE) >= (?::DATE - INTERVAL {days} DAY)
+          {get_phase_sql_condition(phase) if phase else ''}
     """
     rows = qry(sql, [article, f"{spec_prefix7}%", target_date, target_date])
     return [r['wc'] for r in rows if r.get('wc')]

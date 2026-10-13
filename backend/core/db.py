@@ -72,6 +72,11 @@ def reload_duckdb_data() -> bool:
                 FROM read_csv_auto('{normalized_cgrs}', all_varchar=True)
             """)
         return True
+    try:
+        from backend.core.time_utils import init_machine_phase_cache
+        init_machine_phase_cache(db_conn)
+    except Exception as e:
+        print(f"[db] init_machine_phase_cache error: {e}")
     return os.path.exists(data_path)
 
 

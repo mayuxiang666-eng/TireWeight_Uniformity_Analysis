@@ -34,6 +34,7 @@
           label="预警规格"
           prop="article10"
           min-width="115"
+          class-name="col-spec-code"
           align="center"
         >
           <template #default="{ row }">
@@ -159,24 +160,20 @@
           align="center"
         >
           <template #default="{ row }">
-            <template v-if="isRecommendButton(row)">
-              <el-tooltip :content="row.action_tooltip || '点击查看该规格历史最优工艺参数推荐与基准对比'" placement="top">
-                <button
-                  type="button"
-                  class="action-btn"
-                  @click.stop="handleOpenRecommend(row)"
-                >
-                  {{ cleanActionText(row.action_text || '查看推荐参数') }}
-                </button>
-              </el-tooltip>
-            </template>
-            <template v-else-if="row.action_text && row.action_text !== '-'">
-              <el-tooltip :content="row.action_tooltip || '机台行动建议'" placement="top">
-                <span class="action-tag">
-                  {{ cleanActionText(row.action_text) }}
-                </span>
-              </el-tooltip>
-            </template>
+            <button
+              v-if="isRecommendButton(row)"
+              type="button"
+              class="action-btn"
+              @click.stop="handleOpenRecommend(row)"
+            >
+              {{ cleanActionText(row.action_text || '查看推荐') }}
+            </button>
+            <span
+              v-else-if="row.action_text && row.action_text !== '-'"
+              class="action-tag"
+            >
+              {{ cleanActionText(row.action_text) }}
+            </span>
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
@@ -411,9 +408,13 @@ function cleanActionText(text) {
   color: #92400e !important;
 }
 
-:deep(.el-table .row-selected td:first-child) {
+:deep(.el-table .row-selected td.col-spec-code) {
   position: relative;
   box-shadow: inset 4px 0 0 #f59e0b;
+}
+
+:deep(.el-table .row-selected td.col-spec-code .spec-code-text) {
+  color: #b45309;
 }
 
 /* 表头：字体放大 20% (14.5px)，低饱和灰，加粗 */

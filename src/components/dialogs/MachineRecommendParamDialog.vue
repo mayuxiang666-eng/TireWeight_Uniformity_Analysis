@@ -12,20 +12,21 @@
       <div class="rec-dialog-header">
         <div class="header-left">
           <span class="dialog-title-text">{{ machine }} 机台参数推荐</span>
+          <span v-if="targetPhaseTag" class="phase-tag">{{ targetPhaseTag }}</span>
           <span
-            v-if="recData?.has_recommendation"
+            v-if="hasValidRecommendation"
             class="rec-header-badge"
             :class="isSameMachine ? 'badge-same' : 'badge-cross'"
           >
-            {{ isSameMachine ? '🟢 同机台参数推荐' : `🟠 跨机台参数推荐 (来源: ${recData.source_machine})` }}
+            {{ isSameMachine ? '🟢 同机台参数推荐' : `🟠 同分期跨机台推荐 (来源: ${recData.source_machine})` }}
           </span>
-          <span v-else-if="recData && !recData.has_recommendation" class="rec-header-badge badge-neutral">
-            ⚪ 暂无推荐参数
+          <span v-else-if="recData && !hasValidRecommendation" class="rec-header-badge badge-neutral">
+            ⚪ 未查询到有效参数
           </span>
         </div>
 
         <!-- 控制区：默认只展示结果，点击展开/隐藏推荐修改前状态列 -->
-        <div v-if="recData?.has_recommendation && hasStatusComparison" class="header-controls">
+        <div v-if="hasValidRecommendation && hasStatusComparison" class="header-controls">
           <el-button
             size="small"
             :type="showPreState ? 'primary' : 'default'"
@@ -49,13 +50,13 @@
         <span class="meta-pill-val font-mono">{{ article }}</span>
       </div>
       <!-- 当前日期 -->
-      <div v-if="recData?.has_recommendation" class="meta-pill meta-pill-highlight">
+      <div v-if="hasValidRecommendation" class="meta-pill meta-pill-highlight">
         <span class="meta-pill-label">当前日期</span>
         <span class="meta-pill-val font-mono">{{ recData.current_base_date || recData.baseline_status_date || targetDate }}</span>
       </div>
       <!-- 推荐参数日期 (点击可展开/收起生产表现对比) -->
       <div
-        v-if="recData?.has_recommendation && (recData.recommend_event_date || recData.best_event_time)"
+        v-if="hasValidRecommendation && (recData.recommend_event_date || recData.best_event_time)"
         class="meta-pill meta-pill-rec-date is-clickable-pill"
         :class="{ 'is-active-pill': showCgrsPanel }"
         @click="onTopDatePillClick"
@@ -117,13 +118,11 @@
     </div>
 
     <!-- 无推荐调参记录状态 (明确提示未查询到修改记录，绝不强行展示表格) -->
-    <div v-else-if="!recData || !recData.has_recommendation" class="rec-state-box state-empty">
+    <div v-else-if="!recData || !hasValidRecommendation" class="rec-state-box state-empty">
       <el-icon size="28" style="color: #94a3b8;"><InfoFilled /></el-icon>
       <div class="empty-msg">
-        <div class="msg-title">未匹配到推荐调参记录</div>
-        <div class="msg-desc">
-          历史生产数据中未查询到针对规格 [{{ article }}] 且质量优于该机台的正向调参记录
-        </div>
+        <div class="msg-title">{{ recData?.recommend_title || '未查询到推荐参数' }}</div>
+        <div class="msg-desc">{{ recData?.message || '该机台当前工艺参数已稳定在同分期最佳基准，或暂无同分期历史有效调参记录。' }}</div>
       </div>
     </div>
 
@@ -325,6 +324,13 @@ const showPreState = ref(false) // 默认只展示结果（不展示推荐修改
 const showCgrsPanel = ref(false)
 const embeddedCgrsPanelRef = ref(null)
 
+const targetPhaseTag = computed(() => {
+  const p = recData.value?.target_phase
+  if (p === 'P4') return '四期'
+  if (p === 'P3') return '三期'
+  return ''
+})
+
 function handleCgrsTransitionDone() {
   if (embeddedCgrsPanelRef.value?.resizeChart) {
     embeddedCgrsPanelRef.value.resizeChart()
@@ -352,6 +358,19 @@ const isSameMachine = computed(() => {
 })
 
 // 是否包含多工序工艺参数状态对比表 (只要包含 status_comparison 数据即渲染四列全息看板)
+// 是否存在真正需要调整的有效推荐（排除“已到达最佳参数”/修改变化均为0的情况）
+const hasValidRecommendation = computed(() => {
+  if (!recData.value || !recData.value.has_recommendation) return false
+  if (recData.value.is_optimal_no_diff) return false
+  if (Array.isArray(recData.value.status_comparison)) {
+    const changedRows = recData.value.status_comparison.filter(r => r && r.is_changed)
+    if (changedRows.length > 0 && changedRows.every(r => r.change === '已到达最佳参数' || Math.abs(Number(r.change_value) || 0) < 0.0001)) {
+      return false
+    }
+  }
+  return true
+})
+
 const hasStatusComparison = computed(() => {
   return Boolean(
     recData.value?.status_comparison &&
@@ -540,11 +559,23 @@ async function fetchRecommendedParams() {
   letter-spacing: -0.01em;
 }
 
+.phase-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
 .rec-header-badge {
   font-size: 12px;
   font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 14px;
+  padding: 2px 12px;
+  border-radius: 20px;
   display: inline-flex;
   align-items: center;
   line-height: 1.5;
@@ -582,8 +613,8 @@ async function fetchRecommendedParams() {
   align-items: center;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 4px 11px;
+  border-radius: 20px;
+  padding: 4px 13px;
   font-size: 12px;
   line-height: 1.4;
   gap: 6px;

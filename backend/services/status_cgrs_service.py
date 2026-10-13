@@ -806,7 +806,12 @@ def calculate_status_recommendation_comparison(
     changed_rows = [r for r in rows if r["is_changed"]]
     all_zero_diff = False
     if changed_rows:
-        all_zero_diff = all(abs(r.get("change_value") or 0.0) < 0.0001 for r in changed_rows)
+        # 严格判断：必须所有推荐项都有确切有效的数值 (change_value is not None)，且变化量绝对值 < 0.0001
+        # 若存在当前未调过(无记录/None)导致无法对比的项，绝不能误当成 0 或误判为已达最佳参数
+        all_zero_diff = all(
+            r.get("change_value") is not None and abs(float(r.get("change_value"))) < 0.0001
+            for r in changed_rows
+        )
         if all_zero_diff:
             for r in changed_rows:
                 r["change"] = "已到达最佳参数"

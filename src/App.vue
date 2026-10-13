@@ -10,21 +10,7 @@
           <span class="brand-name">均匀性AI智能分析系统</span>
           <span class="brand-sub">Uniformity AI Intelligence</span>
         </div>
-        <!-- 当前选中分析规格显示与重置 (使用 Element Plus 官方 closable 标签组件，避免嵌套边框) -->
-        <!-- 当前选中分析规格显示与重置 (带三期/四期期别标签) -->
-        <div v-if="filterStore.selectedArticle" style="margin-left: 20px;">
-          <el-tag
-            size="large"
-            type="warning"
-            effect="light"
-            closable
-            @close="filterStore.resetDrillDown()"
-            style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; border-radius: 20px; padding: 6px 14px; height: 34px; display: inline-flex; align-items: center; background: #fffbeb; border: 1px solid #fde68a; color: #b45309;"
-          >
-            <span>当前规格: {{ filterStore.selectedArticle }}</span>
-            <span v-if="currentArticlePhase" class="phase-tag-badge">{{ currentArticlePhase }}</span>
-          </el-tag>
-        </div>
+
       </div>
       
       <div class="header-right" style="display: flex; align-items: center; gap: 8px;">

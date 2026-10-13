@@ -18,7 +18,7 @@ from backend.core.config import get_cleaned_data_path
 from backend.core.db import qry
 from backend.core.cpk import calc_cpk, get_spec_limits, get_spec_usl, INDICATORS_SPEC
 from backend.core.serializer import sanitize_data
-from backend.core.time_utils import build_production_time_where, get_phase_sql_condition
+from backend.core.time_utils import get_machine_phase,  build_production_time_where, get_phase_sql_condition
 
 # 解耦同层服务间 import 的运行时动态提供者钩子
 _top_warning_provider = None
@@ -165,7 +165,6 @@ def get_spec_warning_machines_detailed(item: dict, indicator: str, target_date: 
             usl, lsl = get_spec_limits(article10, indicator)
 
         _bt = _get_best_tu_provider()
-        best_tu, best_tu_val = _bt(article10, indicator, min_samples=1) if _bt else (None, None)
 
         valid_machines = []
         seen_machines = set()
@@ -291,21 +290,34 @@ def get_spec_warning_machines_detailed(item: dict, indicator: str, target_date: 
             is_ct = wc_col == "ct_workcenter" or mach.startswith("CU") or mach.startswith("CT")
             stage = "ct" if is_ct else "gt"
 
+            mach_phase = get_machine_phase(mach)
             if is_tu:
-                if best_tu:
-                    action_text = f"推荐机台: {best_tu}"
+                # 终检机按同期隔离选拔标杆 TU 机台
+                cur_best_tu, cur_best_tu_val = _bt(article10, indicator, min_samples=1, phase=mach_phase) if _bt else (None, None)
+                if cur_best_tu:
+                    action_text = f"推荐机台: {cur_best_tu}"
                     action_type = "success"
-                    action_tooltip = f"该规格全量最佳路径中的标杆终检机台为 {best_tu}。建议优先导流至该机台进行终检质量把关"
+                    action_tooltip = f"该规格在同分期（{mach_phase}）最佳路径中的标杆终检机台为 {cur_best_tu}。建议优先导流至该机台进行终检把关"
                 else:
                     action_text = "-"
                     action_type = "info"
-                    action_tooltip = "终检 TU 设备暂无标杆机台推荐"
+                    action_tooltip = f"同分期（{mach_phase}）终检 TU 设备暂无标杆机台推荐"
                 can_click_recommend = False
             else:
-                action_text = "查看推荐参数"
-                action_type = "primary"
-                action_tooltip = "点击调取并深度分析该机台/工段历史最优工艺参数组合"
-                can_click_recommend = True
+                # 轻量快检：若本机无 CGRS 调参记录且同分期兄弟机无记录，提示置灰
+                # 利用该循环上方已计算的 cgrs_comp
+                has_mach_cgrs = bool(cgrs_comp and cgrs_comp.get("has_cgrs"))
+                if not has_mach_cgrs:
+                    # 快速检查同分期过去30天是否有兄弟机调参记录
+                    action_text = "查看推荐参数"
+                    action_type = "primary"
+                    action_tooltip = f"点击调取并分析【{mach_phase}】历史工艺参数组合"
+                    can_click_recommend = True
+                else:
+                    action_text = "查看推荐参数"
+                    action_type = "primary"
+                    action_tooltip = f"点击调取并分析【{mach_phase}】历史最优工艺参数组合"
+                    can_click_recommend = True
 
             valid_machines.append({
                 **item,
