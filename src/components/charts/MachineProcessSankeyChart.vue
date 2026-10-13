@@ -12,37 +12,21 @@
     </div>
     <template v-else>
       <div style="display: flex; flex-direction: column; height: 100%;">
-        <div class="path-notice" style="flex-shrink: 0; margin-bottom: 6px; font-size: 12px; background: #fafaf9; padding: 6px 12px; border-radius: 6px; border: 1px solid #e7e5e4; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div class="path-notice" style="flex-shrink: 0; margin-bottom: 6px; font-size: 12px; background: #fff7ed; padding: 6px 12px; border-radius: 4px; border: 1px solid #ffedd5; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
-            <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #b91c1c;">
-              <span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444; display: inline-block; box-shadow: 0 0 6px rgba(239, 68, 68, 0.8);"></span>
-              红色节点：红色预警机台
+            <span style="font-weight: 600; color: #475569;">灰色节点：正常流转机台</span>
+            <span style="font-weight: 600; color: #dc2626; display: inline-flex; align-items: center; gap: 4px;">
+              红色发光节点：核心预警报警机台（复用预警机台接口计算）
+              <el-tooltip placement="top" raw-content>
+                <template #content>
+                  <div style="max-width: 330px; font-size: 12px; line-height: 1.6; padding: 4px;">
+                    <strong style="color: #ef4444;">核心预警报警机台判定</strong><br/>
+                    直接复用左侧「预警机台」计算接口判定结果，将当前规格下拉低贡献最重、出现调参恶化或持续在榜的核心负贡献设备自动进行红色高亮与发光投影。
+                  </div>
+                </template>
+                <el-icon style="cursor: pointer; color: #dc2626; font-size: 13px;"><QuestionFilled /></el-icon>
+              </el-tooltip>
             </span>
-            <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #c2410c;">
-              <span style="width: 8px; height: 8px; border-radius: 50%; background: #f97316; display: inline-block; box-shadow: 0 0 6px rgba(249, 115, 22, 0.8);"></span>
-              橙色节点：橙色预警机台
-            </span>
-            <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #a16207;">
-              <span style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block; box-shadow: 0 0 6px rgba(234, 179, 8, 0.8);"></span>
-              黄色节点：黄色预警机台
-            </span>
-            <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #64748b;">
-              <span style="width: 8px; height: 8px; border-radius: 2px; background: #94a3b8; display: inline-block;"></span>
-              灰色节点：正常流转机台
-            </span>
-            <el-tooltip placement="top" raw-content>
-              <template #content>
-                <div style="max-width: 330px; font-size: 12px; line-height: 1.6; padding: 4px;">
-                  <strong style="color: #0f172a;">桑基图节点预警上色规则</strong><br/>
-                  节点颜色严格联动左侧「预警机台」等级：<br/>
-                  1. <strong style="color: #ef4444;">🔴 红色预警</strong>：调参恶化 / 持续霸榜机台<br/>
-                  2. <strong style="color: #f97316;">🟠 橙色预警</strong>：CPK 降幅超 35% / 持续在榜机台<br/>
-                  3. <strong style="color: #eab308;">🟡 黄色预警</strong>：常规波动预警机台<br/>
-                  4. <strong style="color: #64748b;">⚪ 灰色节点</strong>：正常质量指标流转机台
-                </div>
-              </template>
-              <el-icon style="cursor: pointer; color: #94a3b8; font-size: 13px;"><QuestionFilled /></el-icon>
-            </el-tooltip>
           </div>
         </div>
         <v-chart
@@ -231,38 +215,21 @@ const option = computed(() => {
     return parts.length > 1 ? parts.slice(1).join('_').trim().toUpperCase() : nodeName.trim().toUpperCase()
   }
 
+  function getMachineCode(nodeName) {
+    if (!nodeName) return ''
+    const parts = nodeName.split('_')
+    return parts.length > 1 ? parts.slice(1).join('_').trim().toUpperCase() : nodeName.trim().toUpperCase()
+  }
+
   const nodes = props.sankeyData.nodes.map(n => {
     const prefix = n.name.split("_")[0]
     const adjustedDepth = (prefix === '动平衡TB') ? n.depth + 1 : n.depth
     const mCode = getMachineCode(n.name)
 
-    // 从传入的预警机台映射中匹配预警级别
-    let warningLevel = props.warningMachineMap?.[mCode] || null
-    if (!warningLevel && n.warning_level) {
-      warningLevel = n.warning_level
-    } else if (!warningLevel && n.is_warning_machine) {
-      warningLevel = 'red'
-    }
+    // 复用预警机台接口：由后端直接调用 get_warning_cpk 判定的核心预警报警机台
+    const isWarning = Boolean(n.is_warning_machine)
 
-    const isWarning = Boolean(warningLevel)
-    let nodeColor = '#94a3b8'
-    let shadowColor = 'transparent'
-    let shadowBlur = 0
-
-    if (warningLevel === 'red') {
-      nodeColor = '#ef4444'
-      shadowColor = 'rgba(239, 68, 68, 0.85)'
-      shadowBlur = 12
-    } else if (warningLevel === 'orange') {
-      nodeColor = '#f97316'
-      shadowColor = 'rgba(249, 115, 22, 0.85)'
-      shadowBlur = 12
-    } else if (warningLevel === 'yellow') {
-      nodeColor = '#eab308'
-      shadowColor = 'rgba(234, 179, 8, 0.85)'
-      shadowBlur = 12
-    }
-
+    const nodeColor = isWarning ? '#ef4444' : '#94a3b8'
     const itemStyle = {
       color: nodeColor,
       borderWidth: 0,
@@ -270,8 +237,8 @@ const option = computed(() => {
     }
 
     if (isWarning) {
-      itemStyle.shadowColor = shadowColor
-      itemStyle.shadowBlur = shadowBlur
+      itemStyle.shadowColor = 'rgba(239, 68, 68, 0.95)'
+      itemStyle.shadowBlur = 14
       itemStyle.shadowOffsetX = 0
       itemStyle.shadowOffsetY = 0
     }
@@ -280,7 +247,6 @@ const option = computed(() => {
       name: n.name,
       depth: adjustedDepth,
       is_warning_machine: isWarning,
-      warning_level: warningLevel,
       spec_cpk: n.spec_cpk,
       spec_std: n.spec_std,
       spec_ratio: n.spec_ratio,
@@ -339,16 +305,7 @@ const option = computed(() => {
           const std = params.data.spec_std
           const avg = params.data.spec_avg
           const cgrs = params.data.cgrs_comparison
-          let warnText = ''
-          if (params.data?.warning_level === 'red') {
-            warnText = ' <span style="color:#ef4444;font-weight:bold;margin-left:6px;">[🔴 红色预警机台]</span>'
-          } else if (params.data?.warning_level === 'orange') {
-            warnText = ' <span style="color:#f97316;font-weight:bold;margin-left:6px;">[🟠 橙色预警机台]</span>'
-          } else if (params.data?.warning_level === 'yellow') {
-            warnText = ' <span style="color:#eab308;font-weight:bold;margin-left:6px;">[🟡 黄色预警机台]</span>'
-          } else if (params.data?.is_warning_machine) {
-            warnText = ' <span style="color:#ef4444;font-weight:bold;margin-left:6px;">[核心负贡献报警]</span>'
-          }
+          const warnText = params.data.is_warning_machine ? ' <span style="color:#ef4444;font-weight:bold;margin-left:6px;">[核心预警报警机台]</span>' : ''
           
           let cgrsHtml = ''
           if (cgrs && cgrs.has_cgrs) {

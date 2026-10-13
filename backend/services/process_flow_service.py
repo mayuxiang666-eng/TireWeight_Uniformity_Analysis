@@ -300,20 +300,27 @@ def get_process_sankey(
             )
             if warn_res and warn_res.get("status") == "success":
                 sev_order = {"red": 3, "orange": 2, "yellow": 1}
-                for w_item in warn_res.get("data", []):
-                    wm = str(w_item.get("warning_machine") or "").strip().upper()
-                    w_lvl = w_item.get("warning_level") or "yellow"
-                    if wm and wm != "-":
-                        warning_machines[wm] = 1.0
-                        old_lvl = warning_machine_levels.get(wm)
-                        if not old_lvl or sev_order.get(w_lvl, 0) > sev_order.get(old_lvl, 0):
-                            warning_machine_levels[wm] = w_lvl
-                        top_warn_list.append({
-                            "machine": wm,
-                            "warning_level": w_lvl,
-                            "cpk_pct_change": w_item.get("cpk_pct_change"),
-                            "action_text": w_item.get("action_text")
-                        })
+                valid_warn_items = [
+                    w for w in warn_res.get("data", [])
+                    if w.get("warning_machine") and str(w.get("warning_machine")).strip() not in ("-", "")
+                ]
+                if valid_warn_items:
+                    # 只保留最严重的第一台机台进行报警（红色报红，橙色报橙，黄色报黄）
+                    valid_warn_items.sort(
+                        key=lambda x: sev_order.get(x.get("warning_level") or "yellow", 1),
+                        reverse=True
+                    )
+                    top1 = valid_warn_items[0]
+                    wm = str(top1.get("warning_machine") or "").strip().upper()
+                    w_lvl = top1.get("warning_level") or "yellow"
+                    warning_machines[wm] = 1.0
+                    warning_machine_levels[wm] = w_lvl
+                    top_warn_list.append({
+                        "machine": wm,
+                        "warning_level": w_lvl,
+                        "cpk_pct_change": top1.get("cpk_pct_change"),
+                        "action_text": top1.get("action_text")
+                    })
         except Exception as warn_err:
             print(f"[process_flow_service] Error reusing get_warning_cpk: {warn_err}")
 

@@ -930,23 +930,29 @@ const onlyDeclining = ref(true)
 const warningMinSamples = ref(30)
 const warningMaxCpk     = ref(0.9)
 
-// 当前选定规格的预警机台映射（机台号大写 -> warning_level: 'red' | 'orange' | 'yellow'）
+// 当前选定规格的最严重第 1 台预警机台映射（仅保留最严重的问题机台报警：红报红，橙报橙，黄报黄）
 const currentSpecWarningMachineMap = computed(() => {
   if (!tab1SelectedArticle.value || !articles.value || articles.value.length === 0) {
     return {}
   }
-  const map = {}
+  const specItems = articles.value.filter(
+    item => item.article10 === tab1SelectedArticle.value && item.warning_machine && item.warning_machine !== '-'
+  )
+  if (specItems.length === 0) return {}
+
+  // 严格按严重度排序（红色 3 > 橙色 2 > 黄色 1），同等级按由重到轻原顺序
   const severityOrder = { red: 3, orange: 2, yellow: 1 }
-  articles.value.forEach(item => {
-    if (item.article10 === tab1SelectedArticle.value && item.warning_machine) {
-      const mach = String(item.warning_machine).trim().toUpperCase()
-      const lvl = item.warning_level || 'yellow'
-      if (!map[mach] || (severityOrder[lvl] || 0) > (severityOrder[map[mach]] || 0)) {
-        map[mach] = lvl
-      }
-    }
+  const sorted = [...specItems].sort((a, b) => {
+    const sA = severityOrder[a.warning_level] || 1
+    const sB = severityOrder[b.warning_level] || 1
+    return sB - sA
   })
-  return map
+
+  // 只保留最严重的第一台机台
+  const top1 = sorted[0]
+  const mach = String(top1.warning_machine).trim().toUpperCase()
+  const lvl = top1.warning_level || 'yellow'
+  return { [mach]: lvl }
 })
 
 async function loadWarningArticles() {

@@ -891,15 +891,13 @@
 - **移除行动措施悬浮层（Tooltip）**：
   - 在 [CoreSpecActionTable.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/tables/CoreSpecActionTable.vue) 的「行动措施」列中移除了外层的 `<el-tooltip>`，悬浮机台推荐参数按钮或标签时不再弹出多余黑底说明弹层。
 
-### 2. 单日生产工序桑基图预警节点：直接复用核心规格接口与颜色联动
-- **历史缺陷分析**：
-  - 单日工序桑基图服务（[process_flow_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/process_flow_service.py)）历史上调用了独立的 `get_top_warning_machines` 启发式计算模块，且硬编码仅取 1 台设备标为红色，排除了动平衡 TB 设备，与左侧「重点规格及行动建议」表格结果脱节。
-- **直接复用权威计算接口**：
+### 2. 单日生产工序桑基图：恢复红色发光报警机台机制并复用核心预警机台接口
+- **历史缺陷与方案回归**：
+  - 单日工序桑基图服务（[process_flow_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/process_flow_service.py)）历史上调用了独立的 `get_top_warning_machines` 启发式计算模块，与左侧「重点规格及行动建议」表格结果脱节；后续尝试的多色（黄/橙/红）分色破坏了工序流原有的聚焦性与视觉平衡。
+- **恢复原本报警机制 + 复用核心预警机台接口**：
   - **后端（[process_flow_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/process_flow_service.py)）**：
-    彻底废弃独立旧函数，**直接调用并复用** `article_service.py` 中的 `get_warning_cpk` 接口。根据选定规格与日期，直接获取其所有预警机台及其精确的预警等级（🔴 `red`、🟠 `orange`、🟡 `yellow`），赋予到桑基图的各个机台节点上。
-  - **前端（[MachineProcessSankeyChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/MachineProcessSankeyChart.vue) & [Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue)）**：
-    - `Dashboard.vue` 通过 `currentSpecWarningMachineMap` 提取选中规格的预警机台等级映射并传递给桑基图；
-    - 桑基图节点严格按左侧表格对齐（🔴 红色预警机台、🟠 橙色预警机台、🟡 黄色预警机台、⚪ 灰色正常流转机台）；
-    - 图表上方图例分类与 Tooltip 对应升级为四级联动说明。
-- **节点边框样式优化（去除深色描边）**：
-  - 响应视觉优化需求，在 [MachineProcessSankeyChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/MachineProcessSankeyChart.vue) 中将节点边框设为无（`borderWidth: 0, borderColor: 'transparent'`），去除高对比度深色描边线，保留平滑的纯色填充与同色系发光效果。
+    彻底废弃独立旧函数，**直接复用核心规格预警接口** `article_service.py` 中的 `get_warning_cpk`。从当前规格对应的预警机台清单中，按严重度（红>橙>黄）提取核心预警报警机台，并在桑基图节点中标记 `is_warning_machine = true`。
+  - **前端（[MachineProcessSankeyChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/MachineProcessSankeyChart.vue)）**：
+    - 恢复原本经典的**灰色正常流转 + 红色发光报警机台**设计：正常节点保持低噪 Slate 灰（`#94a3b8`），报警机台高亮标红（`#ef4444`）并投射鲜明红色光晕（`rgba(239, 68, 68, 0.95)`, `shadowBlur: 14`）；
+    - 节点设置 `borderWidth: 0, borderColor: 'transparent'`，无生硬的深色轮廓边框；
+    - 顶部提示条与 Tooltip 恢复为核心预警报警机台说明（`灰色节点：正常流转机台`，`红色发光节点：核心预警报警机台（复用预警机台接口计算）`）。
