@@ -1074,3 +1074,35 @@
    - `deploy_to_server.py` 移除 Nginx 检查，实现自动兼容平滑过渡与健康轮询；
    - 生产环境实测验证：`http://10.246.97.159:8088/` 前端与 API 均 200 OK 正常运转，全量代码已推送 GitHub。
 
+---
+
+### 11. 本地与服务器端全量冗余文件排查、安全净化与开发/生产双端架构固化 (2026-10-19 落地)
+
+1. **服务器端 (`\\10.246.97.159`) 全量冗余文件排查与安全清除**：
+   - **清除废弃组件**：彻底删除 `nginx/` 目录（12.6 MB），根除所有与 Nginx 相关的残留进程与端口潜在冲突；
+   - **清除根目录历史旧数据与旧代码**：删除根目录下已废弃的旧 `data/` 目录（351.4 MB，当前后端与 DuckDB 仅加载 `backend/data/` 与 `cgrs_data/`）；删除根目录已废弃的旧 `etl/` 模块（1.9 MB，生产调度与导入全量统一使用 `backend/etl/`）；
+   - **清理前端旧编译构建碎片**：深度清理 `frontend/dist/assets/` 中积压的 70 多个历史陈旧构建碎片（93.4 MB），仅保留当前最新版本的生产 JS/CSS 单页应用包；
+   - **清理杂乱文件**：清理服务器根目录下遗留的 `deploy_to_server.py`、历史乱码批处理文件及 `cgrs_service.py.bak`；
+   - **核心工业资产绝对保护**：严格锁定 `cgrs_data/`（历史偏置与基准变化）与 `CGRS_full_history_data/`（全量底表历史切片），100% 完整保留，绝对不触碰；
+   - **释放成效**：服务器端累计安全释放磁盘存储 **459.4 MB**。
+
+2. **本地项目 (`@untitled1_v2`) 全量扫描与安全大清障**：
+   - **删除历史备份目录**：彻底删除未纳入 Git 版本控制的历史本地全量备份目录 `backup_local_20261016_before_revert/`（452.9 MB）与 `backup_local_before_server_revert/`（122 KB）；
+   - **归档净化过时历史文档**：清空 `docs/` 目录下 16 篇阶段性设计与中间排查草稿（如 `backend_main.md`, `dashboard_rebuild_blueprint.md`, `backend_modularization_architecture_plan.md` 等），并在 [docs/README.md](file:///d:/Ava/untitled1/untitled1_v2/docs/README.md) 中建立统一索引，明确根目录 [MEMORY_SUMMARY.md](file:///d:/Ava/untitled1/untitled1_v2/MEMORY_SUMMARY.md) 为全生命周期技术与业务决策的唯一事实来源（Single Source of Truth）；
+   - **清理源码杂质与一次性测试脚本**：删除 `src/data_analysis2_audit.md`（300 行分析审计草稿），删除 `scripts/` 下的一次性验证门禁脚本（`refactor_gate.py`、`test_all_endpoints.py`、`verify_core_credentials.py`）以及已废弃的原型脚本 `backend/status_param_recommendation_standalone.py`、`scripts/install_etl_scheduler_task.bat`；
+   - **修正 CGRS 自动化导出脚本引用**：更新 `scripts/start_export_local.bat`、`run_daily_cgrs_export.bat` 等批处理，将原指向已移除的旧路径 `etl\export_cgrs_*.py` 准确重定向至现役模块 `backend\etl\export_cgrs_*.py`，保障 Windows 定时任务 08:55 正常调度；
+   - **释放成效与版本追踪**：本地累计安全释放磁盘空间 **453.2 MB**，所有清理决议已全量提交至 Git 分支 `feature/kanban-onboarding-tour`（提交哈希 `caf8d1d`）。
+
+3. **双端环境架构定型与长期研发/生产准则**：
+   - **本地研发环境（分离架构）**：前端 Vite 监听 `5173`（保留秒级 HMR 热更新），后端 FastAPI 监听 `8088`（支持快速调试与代码重载），代理转接 `/api` 至本地 8088。严禁本地使用一键合并架构，以免丧失前端模块热替换开发效率；
+   - **生产服务器环境（合并架构）**：单端口 `8088` 由 FastAPI 统一托管前端 SPA 静态资源与后端所有 API 接口，NSSM 开机静默自启，桌面 0 黑框 CMD，全厂访问地址统一为 `http://10.246.97.159:8088/`。
+
+4. **核心业务算法口径固化（行动表展示排序与状态推荐）**：
+   - **核心规格行动表展示排序（[article_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/article_service.py)）**：
+     - 当日数据：按单规格 CPK 从低到高升序排列（CPK 越低越恶化越靠前）；
+     - 历史数据：按负向贡献度绝对值从大到小降序排列（拉低全厂质量最严重的排在最前）；不再使用机台严重程度等级做强制拦截，与筛选逻辑严格保持统一。
+   - **参数推荐与当前状态展示口径（[status_cgrs_service.py](file:///d:/Ava/untitled1/untitled1_v2/backend/services/status_cgrs_service.py)）**：
+     - 成型工序（KM 119 / PU 125）：优先尝试机台 + 规格型号（尺寸特征）精准匹配底表基准，未录入时安全回退至机台通用基准；
+     - 当前参数状态展示：有调参记录的参数显示 `基准值 + 最新偏置` 并附带生效日期微胶囊；无调参记录的参数干净展示原始底表基准值，不假设偏置为 0，不挂载日期胶囊。
+
+
