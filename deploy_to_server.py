@@ -130,9 +130,6 @@ def deploy(skip_build=False, skip_restart=False):
         os.path.join(LOCAL_ROOT, "backend", "requirements.txt"),
         os.path.join(TARGET_SERVER_DIR, "backend", "requirements.txt")
     )
-    standalone_src = os.path.join(LOCAL_ROOT, "backend", "status_param_recommendation_standalone.py")
-    if os.path.exists(standalone_src):
-        copy_file_safe(standalone_src, os.path.join(TARGET_SERVER_DIR, "backend", "status_param_recommendation_standalone.py"))
 
     # 3.3 后端模块化组件 (core, services, routers) 与配置
     print("  -> 同步后端模块化组件 (core, services, routers)...")
