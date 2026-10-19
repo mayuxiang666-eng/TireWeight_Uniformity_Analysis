@@ -25,8 +25,7 @@ import argparse
 TARGET_SERVER_DIR = r"\\10.246.97.159\tu ai\TireWeight_Uniformity_Analysis"
 LOCAL_ROOT = os.path.dirname(os.path.abspath(__file__))
 SERVER_HOST = "10.246.97.159"
-BACKEND_PORT = 8000
-FRONTEND_PORT = 8088
+SERVER_PORT = 8088
 
 
 def run_cmd(cmd, cwd=None):
@@ -179,16 +178,18 @@ def deploy(skip_build=False, skip_restart=False):
     if os.path.exists(status_cgrs_src):
         copy_file_safe(status_cgrs_src, os.path.join(TARGET_SERVER_DIR, "backend", "data", "Status-CGRS.csv"))
 
-    # 3.6 运维控制脚本与 Nginx 配置
-    print("  -> 同步运维批处理脚本与 Nginx 配置文件...")
+    # 3.6 运维控制脚本同步
+    print("  -> 同步运维控制与自启动脚本...")
     copy_dir_filtered(
         os.path.join(LOCAL_ROOT, "scripts"),
         os.path.join(TARGET_SERVER_DIR, "scripts"),
         ignore_extensions=[".py", ".pyc", ".log", ".tmp", ".parquet", ".db"]
     )
-    nginx_conf_src = os.path.join(LOCAL_ROOT, "scripts", "nginx.conf")
-    copy_file_safe(nginx_conf_src, os.path.join(TARGET_SERVER_DIR, "nginx", "conf", "nginx.conf"))
-    copy_file_safe(nginx_conf_src, os.path.join(TARGET_SERVER_DIR, "nginx", "nginx-1.26.2", "conf", "nginx.conf"))
+    # 同步根目录快捷运维脚本
+    for bat_name in ["一键配置开机自动后台运行(免CMD黑框).bat", "start_services.bat", "status_services.bat", "stop_services.bat"]:
+        src_bat = os.path.join(LOCAL_ROOT, bat_name)
+        if os.path.exists(src_bat):
+            copy_file_safe(src_bat, os.path.join(TARGET_SERVER_DIR, bat_name))
 
     # 3.7 全局持久化记忆文档
     copy_file_safe(
@@ -202,25 +203,34 @@ def deploy(skip_build=False, skip_restart=False):
         print("\n[Notice] 已指定 --skip-restart，跳过服务端重载信令。")
         return True
 
-    # 4. 远程服务优雅重启与健康自愈闭环 (方案 B 核心)
-    print("\n[Step 4/5] 触发远端优雅自重启并进行健康状态自愈校验...")
+    # 4. 远程服务优雅重启与健康自愈闭环 (端口 8088)
+    print("\n[Step 4/5] 触发远端优雅自重启并进行健康状态自愈校验 (端口 8088)...")
 
-    restart_url = f"http://{SERVER_HOST}:{BACKEND_PORT}/api/system/restart"
-    print(f"  -> 发送自重启信号至: {restart_url}")
-    try:
-        req = urllib.request.Request(restart_url, data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            raw_msg = resp.read().decode("utf-8")
-            print(f"  -> [OK] 远端服务已确认收到自重启信号: {raw_msg}")
-    except Exception as e:
-        print(f"  -> [Notice] 发送自重启提示 (若服务正在拉起可忽略): {e}")
+    restart_candidates = [
+        f"http://{SERVER_HOST}:{SERVER_PORT}/api/system/restart",
+        f"http://{SERVER_HOST}:8000/api/system/restart"
+    ]
+    restarted = False
+    for r_url in restart_candidates:
+        try:
+            print(f"  -> 尝试发送自重启信号至: {r_url}")
+            req = urllib.request.Request(r_url, data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                raw_msg = resp.read().decode("utf-8")
+                print(f"  -> [OK] 远端服务已确认收到自重启信号: {raw_msg}")
+                restarted = True
+                break
+        except Exception as e:
+            pass
+    if not restarted:
+        print("  -> [Notice] 未探测到正在运行的 HTTP 服务或服务正在拉起中...")
 
     # 等待 2 秒供系统守护进程 (NSSM) 捕获进程退出并重新拉起
     print("  -> 等待守护进程 (NSSM) 重新加载最新 Python 进程...")
     time.sleep(2)
 
     # 健康轮询校验 (最多 20 秒)
-    test_url = f"http://{SERVER_HOST}:{BACKEND_PORT}/api/articles/all"
+    test_url = f"http://{SERVER_HOST}:{SERVER_PORT}/api/articles/all"
     print(f"  -> 正在进行服务自愈健康检查轮询 ({test_url})...")
     service_up = False
     articles_count = 0
@@ -235,18 +245,18 @@ def deploy(skip_build=False, skip_restart=False):
                     articles_count = len(data.get("articles", []))
                     service_up = True
                     elapsed = round(time.time() - poll_start, 1)
-                    print(f"  -> [SUCCESS] 远端后端服务成功就绪！(耗时 {elapsed} 秒，第 {attempt} 次检测通过)")
+                    print(f"  -> [SUCCESS] 远端服务成功就绪！(耗时 {elapsed} 秒，第 {attempt} 次检测通过)")
                     print(f"  -> 当前可用产品规格数量: {articles_count} 条")
                     break
         except Exception:
             time.sleep(1)
 
     if not service_up:
-        print("  -> [WARN] 20 秒内未收到后端就绪响应，服务端可能正在冷加载大型 Parquet 数据，请稍后复查。")
+        print("  -> [WARN] 20 秒内未收到 8088 端口响应，服务端可能正在冷加载大型 Parquet 数据或需要手动激活自启服务。")
 
     # 5. 触发 DuckDB 内存表热加载
     print("\n[Step 5/5] 触发 DuckDB 内存数据缓存热重载...")
-    reload_url = f"http://{SERVER_HOST}:{BACKEND_PORT}/api/etl/reload"
+    reload_url = f"http://{SERVER_HOST}:{SERVER_PORT}/api/etl/reload"
     try:
         req = urllib.request.Request(reload_url, data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -255,22 +265,22 @@ def deploy(skip_build=False, skip_restart=False):
     except Exception as e:
         print(f"  -> [Notice] DuckDB 热重载触发提示: {e}")
 
-    # 校验前端 Nginx
-    nginx_url = f"http://{SERVER_HOST}:{FRONTEND_PORT}"
-    print(f"  -> 校验前端 Web 静态服务: {nginx_url}")
+    # 校验统一前端页面 (端口 8088)
+    frontend_url = f"http://{SERVER_HOST}:{SERVER_PORT}/"
+    print(f"  -> 校验全功能一体化 Web 页面: {frontend_url}")
     try:
-        with urllib.request.urlopen(nginx_url, timeout=5) as resp:
+        with urllib.request.urlopen(frontend_url, timeout=5) as resp:
             if resp.status == 200:
                 print(f"  -> [OK] 前端 Web 页面响应正常 (HTTP 200)")
     except Exception as e:
-        print(f"  -> [Notice] 前端探测提示 (若未部署外网可忽略): {e}")
+        print(f"  -> [Notice] 前端页面访问探测提示: {e}")
 
     total_time = round(time.time() - start_time, 1)
     print("\n=====================================================================")
     print(f"  [SUCCESS] 生产部署全部顺利完成！(总耗时: {total_time}s)")
-    print(f"  - 前端访问地址 (Nginx):    http://{SERVER_HOST}:{FRONTEND_PORT}")
-    print(f"  - 后端接口地址 (FastAPI):  http://{SERVER_HOST}:{BACKEND_PORT}")
-    print(f"  - 自动重载状态:            已无缝重启生效，无需手动登录服务器！")
+    print(f"  - 看板统一访问地址: http://{SERVER_HOST}:{SERVER_PORT}")
+    print(f"  - 架构模式:         极简单服务 (FastAPI 兼管前端与数据，彻底放弃 Nginx)")
+    print(f"  - 运行状态:         开机后台静默自启，0 CMD 黑框，无需人工运维！")
     print("=====================================================================")
     return True
 

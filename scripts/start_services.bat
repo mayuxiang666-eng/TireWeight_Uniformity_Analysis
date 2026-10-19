@@ -7,9 +7,9 @@ if '%errorlevel%' NEQ '0' (
     exit /b
 )
 
-title Start TireWeight Uniformity Analysis Services
+title Start TireWeight Uniformity Analysis Services (Port 8088)
 echo ===================================================
-echo   Starting TireWeight Uniformity Analysis Services
+echo   Starting TireWeight Dashboard Service (Port 8088)
 echo ===================================================
 
 set ROOT_DIR=D:\TU AI\TireWeight_Uniformity_Analysis
@@ -20,40 +20,24 @@ cd /d "%ROOT_DIR%"
 
 set NSSM_EXE="%ROOT_DIR%\scripts\nssm.exe"
 
-echo [1/2] Starting / Verifying FastAPI Backend (Port 8000)...
+echo [1/1] Starting / Verifying FastAPI Service (Port 8088)...
 if exist %NSSM_EXE% (
     %NSSM_EXE% start FastAPI-Service >nul 2>&1
 )
 net start FastAPI-Service >nul 2>&1
 
-timeout /t 2 /nobreak >nul
-netstat -ano | findstr ":8000 " | findstr "LISTENING" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Standalone Python launching on Port 8000...
-    powershell -Command "$conns = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue; foreach ($c in $conns) { $p = $c.OwningProcess; if ($p -gt 0) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } }"
-    start "FastAPI_Port8000" python run_server.py
-)
-
-echo [2/2] Starting / Verifying Nginx Frontend (Port 8088)...
-if exist %NSSM_EXE% (
-    %NSSM_EXE% start Nginx-Service >nul 2>&1
-)
-net start Nginx-Service >nul 2>&1
-
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 netstat -ano | findstr ":8088 " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Standalone Nginx launching on Port 8088...
-    if exist "%ROOT_DIR%\scripts\start_nginx.bat" (
-        call "%ROOT_DIR%\scripts\start_nginx.bat"
-    )
+    echo Standalone Python launching on Port 8088...
+    powershell -Command "$conns = Get-NetTCPConnection -LocalPort 8088 -ErrorAction SilentlyContinue; foreach ($c in $conns) { $p = $c.OwningProcess; if ($p -gt 0) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } }"
+    start "FastAPI_Port8088" python run_server.py
 )
 
 timeout /t 2 /nobreak >nul
 echo.
 echo ===================================================
-echo [SUCCESS] Services Checked!
-echo Frontend Web UI: http://10.246.97.159:8088
-echo Backend API:     http://10.246.97.159:8000
+echo [SUCCESS] Service Checked!
+echo Access URL: http://10.246.97.159:8088
 echo ===================================================
 timeout /t 3

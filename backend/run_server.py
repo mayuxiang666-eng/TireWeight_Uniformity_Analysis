@@ -30,5 +30,5 @@ if __name__ == "__main__":
     reload_env = os.environ.get("FASTAPI_RELOAD", "0" if is_service else "1")
     should_reload = reload_env.lower() in ("1", "true", "yes")
 
-    print(f"[INFO] Starting FastAPI backend on 0.0.0.0:8000 (reload={should_reload}, service={is_service})...")
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=should_reload)
+    print(f"[INFO] Starting FastAPI backend on 0.0.0.0:8088 (reload={should_reload}, service={is_service})...")
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8088, reload=should_reload)

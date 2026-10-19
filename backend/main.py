@@ -48,4 +48,4 @@ if os.path.isdir(FRONTEND_DIST):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8088, reload=True)
