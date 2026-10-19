@@ -160,11 +160,6 @@ def deploy(skip_build=False, skip_restart=False):
         os.path.join(LOCAL_ROOT, "backend", "etl"),
         os.path.join(TARGET_SERVER_DIR, "backend", "etl")
     )
-    # 兼容老版路径
-    copy_dir_filtered(
-        os.path.join(LOCAL_ROOT, "backend", "etl"),
-        os.path.join(TARGET_SERVER_DIR, "etl")
-    )
 
     # 3.5 配方基准与业务数据 (只拷贝基准 CSV，不覆盖现场 parquet)
     print("  -> 校验并同步基准配方与参数 (Recipes.csv, CGRS.csv, Status-CGRS.csv)...")

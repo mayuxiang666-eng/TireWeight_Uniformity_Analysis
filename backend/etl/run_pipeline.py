@@ -26,7 +26,7 @@ except (ModuleNotFoundError, ImportError):
         from backend.etl.clean_data import clean_main, get_data_dir
         from backend.etl.merge_data import merge_main
 
-def notify_backend_reload(backend_url="http://127.0.0.1:8000/api/etl/reload"):
+def notify_backend_reload(backend_url="http://127.0.0.1:8088/api/etl/reload"):
     try:
         req = urllib.request.Request(
             backend_url, 
