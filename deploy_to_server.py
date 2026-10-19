@@ -186,7 +186,7 @@ def deploy(skip_build=False, skip_restart=False):
         ignore_extensions=[".py", ".pyc", ".log", ".tmp", ".parquet", ".db"]
     )
     # 同步根目录快捷运维脚本
-    for bat_name in ["一键配置开机自动后台运行(免CMD黑框).bat", "start_services.bat", "status_services.bat", "stop_services.bat"]:
+    for bat_name in ["start_services.bat", "status_services.bat", "stop_services.bat"]:
         src_bat = os.path.join(LOCAL_ROOT, bat_name)
         if os.path.exists(src_bat):
             copy_file_safe(src_bat, os.path.join(TARGET_SERVER_DIR, bat_name))
