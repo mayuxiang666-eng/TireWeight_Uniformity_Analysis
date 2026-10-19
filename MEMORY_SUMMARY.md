@@ -178,7 +178,47 @@
 1. **参数推荐行动统一文案**：凡是针对成型 (GT/TB) 或硫化 (CT/CU) 的工艺参数推荐，按钮文案统一命名为 **`💡 查看推荐参数`**（深蓝高亮按钮，点击可弹出参数修改轨迹与推荐详情；若无有效参数则显示 `-` 不显示按钮）。
 2. **终检 (TU) 机台行动建议**：不再展示原有的 `🔍 检查该机台`，而是**直接推荐历史最佳 CPK 机台**，**复用该规格在全量最佳生产路径中的最好机台结果**（展示为绿色高亮标签 **`💡 推荐机台: ${bestTuMachine}`**，例如 `💡 推荐机台: TU19`），悬浮 Tooltip 详细展示该标杆 TU 机台在全量历史数据集中的 CPK 均值表现与调配指引。
 
-### 4. 历史最佳工艺参数因果推荐与修改轨迹重构 (MachineRecommendParamDialog.vue & main.py)
+### 5. 重磅更新记录 (2026-10-14) - 规格生产稳定性、CGRS 时间戳隔离、推荐防线加固与悬浮球彻底清除
+
+#### 1. 全厂近十天规格生产数量与稳定性深度诊断
+- **核心结论**：全厂在产规格数量高度稳定。
+  - **数量维度**：常规满产日全厂在产规格均值为 **283 种**（波动区间 270 ～ 297 种），变异系数 $CV = 2.8\%$，属于极高稳定性；
+  - **延续性维度**：跨日规格留存率达 **93% 以上**，Jaccard 相似度 **87% ～ 93%**；
+  - **产能结构**：连续 10 天全勤在产的 163 种核心规格（占 39.9%）直接贡献了全厂 **75.5%** 的绝对产量；生产 $\ge 7$ 天的主力规格贡献超 **91.7%** 产量；
+  - **清单导出**：生成并导出至 `C:\Users\uif77331\Desktop\111\近十天全厂规格覆盖面清单.csv`（UTF-8 with BOM 编码），按出勤天数、跨工序覆盖机台数、累计产量进行三维立体排名。
+
+#### 2. CGRS 连续调参时间戳隔离与展开面板 0 路径修复 (问题 1)
+- **根因剖析**：原受控分析引擎在接收 `event_time` 时，查询范围放宽到了 $\pm 12$ 小时 / 3 天，且在微调事件聚合分组时未做同一自然日限制，导致系统将前一天（如 09-14 17:58）的离散调参跨天错误合并进了 09-15 这一组，把起始时间错误提前到了 09-14，导致在当班期间改前样本被硬性截断为 0 胎，触发双侧 $\ge 5$ 胎门槛被全部过滤。
+- **修复措施**：
+  - `compute_cgrs_controlled_analysis_data` 传入 `event_time` 时优先按目标日期精准隔离，当日优先；
+  - 连续微调分组算法加入严格同自然日判定（`is_same_day`），严禁跨天合并污染调参边界；
+- **实测验证 (CU704 调参事件)**：
+  - 成功恢复改前 11 胎与改后 20 胎，有效路径恢复为 **1 条**（`CU704 ➔ TU5`，CPK 提升 +1.252，增幅 +143.85%），趋势折线图与 SPC 控制限完全恢复。
+
+#### 3. 推荐机台规格、分期与工段三重硬防线加固 (问题 2)
+- **实测排查**：对全厂 80 组真实在产规格与机台进行全流程扫描，实测成型推荐硫化 (GT ➔ CT) 0 次、硫化推荐成型 (CT ➔ GT) 0 次、跨分期 (P3 ➔ P4) 0 次。
+- **加固落地原则**：
+  1. **规格限定**：成型与硫化统一严格锁定为**前 7 位规格编码 (`spec_prefix7`)**，兼顾工艺同胎型的一致性与高匹配度；
+  2. **工段硬隔离**：在候选机台池循环及结果输出断言中，强行互斥：成型 (TB/GT) 严禁推荐 CU/CT 前缀机台，硫化 (CU/CT) 严禁推荐 TB/GT 前缀机台；
+  3. **分期硬隔离**：候选机台比选中强制校验 `get_machine_phase(peer_mach) == target_phase`，三期只在三期比选，四期只在四期比选。
+
+#### 4. 彻底移除全量最佳路径桑基图右上角悬浮球与多余逻辑
+- **前端清理 ([MachineBestProcessSankeyChart.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/charts/MachineBestProcessSankeyChart.vue))**：
+  - 彻底删除模板中的可拖拽悬浮注水/发光球 (`.rec-floating-orb-wrapper`、`.rec-floating-orb`、`.ai-sparkle-icon`)；
+  - 彻底删除点击小球展开的临时参数推荐浮动面板 (`.recommendation-floating-panel`)；
+  - 彻底清理拖拽手势监听事件 (`onOrbPointerDown/Move/Up`)、状态变量与 `@keyframes orbLoadingPulse/orbSuccessGlow` 样式；
+  - 恢复顶栏路径提示条（`path-notice`）的正常边距。
+- **数据流清理 ([Dashboard.vue](file:///d:/Ava/untitled1/untitled1_v2/src/views/Dashboard.vue))**：
+  - 移除专门为悬浮球供数的状态变量 `paramRecommendationData` 与 `paramRecommendationLoading`；
+  - 彻底删除了在切换最佳桑基图时额外触发的接口请求 `loadParamRecommendation()`，不再向后端发送冗余的 `/api/cgrs/param-recommendation` 查询；
+- **关联功能安全**：核心行动表中点击「💡 查看推荐参数」所调用的专业工艺底表四列推荐弹窗（[MachineRecommendParamDialog.vue](file:///d:/Ava/untitled1/untitled1_v2/src/components/dialogs/MachineRecommendParamDialog.vue)）为独立模块，不受任何影响，保持正常运行。
+
+#### 5. 生产自动化部署与热重载
+- 运行 `deploy_to_server.py`，前端构建成功，核心代码与记忆文档同步至 `\\10.246.97.159`，远端服务自愈重启且健康检查通过。
+
+---
+
+
 - **严格回溯基准日原则（彻底杜绝未来数据穿越）**：
   - 接口强制接收并校验观察基准日 `target_date`（如 `2026-08-17`），检索范围强制锁定为 `[target_date - 30天, target_date]`；
   - 坚决杜绝数据库最新时间（如 9月3日）对历史观察日的数据泄漏；
@@ -901,3 +941,136 @@
     - 恢复原本经典的**灰色正常流转 + 红色发光报警机台**设计：正常节点保持低噪 Slate 灰（`#94a3b8`），报警机台高亮标红（`#ef4444`）并投射鲜明红色光晕（`rgba(239, 68, 68, 0.95)`, `shadowBlur: 14`）；
     - 节点设置 `borderWidth: 0, borderColor: 'transparent'`，无生硬的深色轮廓边框；
     - 顶部提示条与 Tooltip 恢复为核心预警报警机台说明（`灰色节点：正常流转机台`，`红色发光节点：核心预警报警机台（复用预警机台接口计算）`）。
+
+---
+
+## 34. 【数据链路与关联标准】全量底表、调参变动表 (Offset) 与生产表数据抽取与关联架构标准 (2026-10-14)
+
+### 1. 核心定位与业务准则
+1. **基准参数与修改参数职责解耦**：
+   - **工艺原始基准参数 (Base Value)**：以全量底表（`recipe_full_params_*.parquet`）为第一源头，提供官方下发的标准工艺设定（`ParameterValue`）；
+   - **机台修改偏置 (Offset)**：严格从调参变动日志（`recipe_offset_changes_*.parquet`）中提取最新的生效调参值（`TechOffsetHistoryValueTo`）；
+   - **最终机台生效状态**：由 $\text{最终状态} = \text{基准参数 (ParameterValue)} + \text{生效偏置 (Offset)}$ 计算生成。
+2. **规格匹配维度严格收敛为【7 位规格】（前 7 位）**：
+   - 彻底废除强卡 10 位的硬过滤规则，统一按前 7 位（`article10[:7]`）对齐；
+   - **业务依据**：在大陆马牌制造编码中，前 7 位（如 `0315212`）决定轮胎物理规格、结构与花纹基准；后 3 位（如 `000`/`080`）仅为 OE 客户代码，同一 7 位前缀的物理工艺基准与机台调参偏置完全通用。7 位匹配可彻底消除 OE 定制代码差异造成的漏匹。
+
+---
+
+### 2. 三张核心数据表及字段映射字典
+
+| 数据表类型 | 文件路径 / 表名 | 关键字段名 | 字段含义与用途 |
+| :--- | :--- | :--- | :--- |
+| **全量参数底表** | `CGRS_full_history_data/recipe_full_params_*.parquet` | `Workcenter`<br>`ProcessTypeID`<br>`RecipeDescription`<br>`MaterialMasterID`<br>`ParameterID`<br>`ParameterValue` | • 机台工位号<br>• 工序号（119: KM, 125: PU, 123: CU）<br>• 规格尺寸描述文本（如 `245/40 R19`，成型规格桥梁）<br>• 物料号（CU: `971000xxxxxx`，KM: `99267...`，PU: `99268...`）<br>• 参数 ID<br>• 配方基准设定值 |
+| **调参变动日志表 (Offset)** | `cgrs_data/recipe_offset_changes_*.parquet` | `Workcenter`<br>`Item` / `ProcessTypeID`<br>`ProdSpecific2`<br>`MaterialMasterID`<br>`RecipeDescription`<br>`ParameterID`<br>`TechOffsetHistoryValueTo`<br>`TechOffsetHistoryLocalDate` | • 机台工位号<br>• 工序标识（KM / PU / Curing）<br>• **成型成品规格 10 位码（KM/PU 与生产表对接关键）**<br>• 物料号（CU 为 `971000xxxxxx`，直通生产表与全量表）<br>• 规格尺寸描述（成型与全量表对接桥梁）<br>• 参数 ID<br>• 调参生效偏置（Offset）<br>• 调参时间戳 |
+| **实际生产数据表** | `cleaned_data/clean_yield.parquet` | `gt_workcenter`<br>`ct_workcenter`<br>`article10`<br>`gt_loc_timestamp`<br>`ct_loc_timestamp` | • **成型机台号**（关联 KM / PU 的 `Workcenter`）<br>• **硫化机台号**（关联 CU 的 `Workcenter`）<br>• 成品 10 位码（截取前 7 位作为规格前缀）<br>• 成型生产时间戳<br>• 硫化生产时间戳 |
+
+---
+
+### 3. 分工段精准关联机制与 SQL 逻辑
+
+#### A. 硫化工段 (CU / Curing - ProcessTypeID: 123)
+* **生产表条件**：硫化机台 `ct_workcenter`，成品规格 `article10[:7]`（核心 6 位去 0 后为 `core6`，如 `0312427` $\rightarrow$ `312427`）；
+* **全量底表提取基准**：
+  $$\text{WHERE } Workcenter = \text{ct\_workcenter} \text{ AND RIGHT}(MaterialMasterID, 6) = \text{core6} \text{ AND ProcessTypeID} = '123'$$
+* **Offset 表提取修改偏置**：
+  $$\text{WHERE } Workcenter = \text{ct\_workcenter} \text{ AND RIGHT}(MaterialMasterID, 6) = \text{core6} \text{ AND Item} = 'Curing'$$
+  取最新生效时间戳的 `TechOffsetHistoryValueTo`。
+
+#### B. 成型二段 (PU - ProcessTypeID: 125)
+* **生产表条件**：成型机台 `gt_workcenter`，成品规格 `spec7 = article10[:7]`；
+* **Offset 表提取修改偏置**：
+  $$\text{WHERE } Workcenter = \text{gt\_workcenter} \text{ AND LEFT}(ProdSpecific2, 7) = \text{spec7} \text{ AND Item} = 'PU'$$
+  通过 `ProdSpecific2` 前 7 位直接与生产表等值锁定；
+* **全量底表提取基准**：
+  通过 `ParameterGlobalName = 'Article Type'` 的参数值前 7 位（`LEFT(ParameterValue, 7) = spec7`）锁定对应配方版本，提取各参数 `ParameterValue`。
+
+#### C. 成型一段 (KM - ProcessTypeID: 119)
+* **生产表条件**：成型机台 `gt_workcenter`，成品规格 `spec7 = article10[:7]`；
+* **Offset 表提取修改偏置**：
+  $$\text{WHERE } Workcenter = \text{gt\_workcenter} \text{ AND LEFT}(ProdSpecific2, 7) = \text{spec7} \text{ AND Item} = 'KM'$$
+* **全量底表提取基准**：
+  利用 Offset 表中该 7 位码同一行随路保存的半成品件号 `MaterialMasterID`（如 `992670...`）或尺寸描述 `RecipeDescription`，直通全量底表提取各参数基准值。
+
+---
+
+### 4. 严禁使用系统自增流水号 `RecipeID` 作为关联主键的实测论据
+* **实测数据验证**：全量底表中 94 个 `RecipeID` 匹配历史变动日志，**仅 59 个能命中，多达 35 个（37.2%）完全断代丢失**；
+* **根本根因**：`RecipeID` 是 CGRS 系统中每次重新发布、升级版本时自动递增的**软件代理键（Surrogate Key）**（同一物料号 `992681050800`，全量表是新版本 `175201`，但历史调参发生在旧版本 `169212`）；
+* **架构决议**：跨表关联必须使用**业务自然主键（Natural Key）**：
+  $$\text{自然业务主键} = \text{Workcenter (机台)} + \text{7位规格前缀 / 尺寸特征} + \text{ParameterID}$$
+
+---
+
+### 5. 覆盖率现实与高可用双轨互补架构
+1. **全量底表直接 7 位直连覆盖率受限**：
+   - 全量底表是 IT 每日定时抽样在线在跑机台的快照，非全厂静态大字典；单日切片仅覆盖全厂产量的 **7.97%**，40 天累计切片覆盖 **15.41%**；
+   - 若辅助引入 `RecipeDescription` 轮胎物理尺寸模糊匹配，全量表覆盖率可升至 **33.12%**。
+2. **变动日志高可用保底（覆盖全厂 98% 生产）**：
+   - 变动日志在记录调参偏置时，系统**随路写入了调参当时的原始工艺基准值（`ParameterValue`）**，且 7 位规格覆盖了全厂 **97.91% 的产量（122 万胎）** 和 **90.54% 的规格**。
+3. **最终工业落地标准流程**：
+   优先以“机台 + 7位规格”在全量底表中检索 `ParameterValue`；若全量底表未收录该规格（占 ~67%），自动启用变动日志中随路留存的基准值接盘，确保全厂 98% 的规格与机台均能完整、准确展示四列工艺参数对比。
+
+---
+
+### 6. CPK 趋势图 (TrendChart) 纵坐标动态自适应刻度规范 (2026-10-14 固化)
+- **业务背景**：单规格下钻时，部分严重超差/失控规格的 CPK 可能极低（如 0.00 ~ 0.15 甚至负数），若 Y 轴锁死 0 ~ 1.5 量程会导致曲线完全压在最底部。
+- **渲染规则**：
+  1. **折线与点颜色**：严格维持系统原版经典橙色（`#f59e0b`），数据点与线色严格一致；
+  2. **背景色块**：严格维持 SPC 4 个控制区间的原版背景色块（`controlAreas`）；
+  3. **纵坐标动态自适应**：当 CPK 数据偏低（`maxVal < 0.8`）时，Y 轴最大值自动根据实际数据最大值自适应留白（例如动态收缩为 `0 ~ 0.25` 或包含负数），放大数据波动的垂直展开细节，同时均值 `CL` 显示杜绝 `-0.000` 现象；数据正常时（`>= 0.8`）维持常规 `0 ~ 1.55` 范围以展现 1.33 目标线。
+
+---
+
+### 7. CGRS 推荐参数与全量底表匹配准则 (2026-10-15 确认与生产部署)
+- **全量底表升级 (`recipe_full_params_2026-10-15.parquet`)**：
+  - 数据量增至 269 万行，涵盖物料由 89 种暴增至 1,541 种，参数聚焦为成型与硫化 67 项核心工艺参数。
+- **工序号定义与机台映射**：
+  - **`119` (KM / 成型一段)**：贴合内衬层 (IL)、帘布层 (PLY1/2)、胎圈反包 (BS/TUP)、胎侧 (SW)。机台命名 `TB1xx`（26项核心参数）。
+  - **`125` (PU / 成型二段)**：带束层 (BL/BR)、冠带条 (BPT/BT)、胎面 (TR)、定型滚压 (SH/SP/PR)。机台命名 `TB2xx`（30项核心参数）。
+  - **`123` (CU / 硫化工序)**：装模、定型、合模加压、硫化保压、脱模。机台命名 `CULxx` / `CURxx`（14项核心参数）。
+- **底表匹配技术口径**：
+  1. **成型工序（119 / 125）**：
+     - **底表基准（`recipe_full_params_*.parquet`）**：优先按 **机台 (`TB1xx` / `TB2xx`) + 规格型号 (`RecipeDescription` 包含轮胎尺寸)** 双重精准匹配；若机台尚未录入该特定规格，自动安全回退至机台工程基准；
+     - **动态偏置（`recipe_offset_changes_*.parquet`）**：严格绑定规格，按 `Workcenter` 与 `ProdSpecific2 LIKE '{article10[:7]}%'` 过滤。
+  2. **硫化工序（123）**：
+     - **机台候选池**：移除 `CU` / `CUG` 模糊别名，机台 1:1 精确匹配（`CUL06` 绝不自动关联 `CUG06`）；
+     - **底表基准**：按 `Workcenter = machine` 且 `RIGHT(MaterialMasterID, 7) = article10[:7]` 精确匹配。
+- **UI 表头微调**：弹窗四列参数对比表第三列表头正式确定为 `推荐参数`（原 `推荐修改后状态`）。
+- **发布状态**：已编译构建并通过自动化部署脚本同步至远端服务器 `\\10.246.97.159`，后端服务已优雅自愈重载并通过 API 验证（HTTP 200）。
+
+---
+
+### 8. 工艺参数当前状态展示与硫化参数机制 (2026-10-15 固化)
+1. **未修改项与有修改项的展示口径**：
+   - **没修改过的参数**：直接保留底表原始基准值（`ParameterValue`），不再显示 `-`，下方不显示日期微胶囊或“未调过”标签，保持干净清爽；
+   - **有修改过的参数**：计算公式为 $\text{当前参数状态} = \text{原始基准值} + \text{最新生效偏置 (Offset)}$，下方保留具体生效日期胶囊（如 `09-21 21:53`）支持溯源。
+2. **硫化参数总量与有效推荐排查结论**：
+   - **硫化全量参数少**：底表天生只有 13 项（合模、装胎高度、生胎高度、新旧胶囊一次/二次定型温压时序等），由工艺特性决定，并非漏抓；
+   - **有效推荐记录少**：核心瓶颈是硫化 `MaterialMasterID` 与成品胎规格 7 位码的跨系统编码格式差异，以及 Plan B 黄金因果检验中硫化对 RFPP 跳动影响间接、且产出样本量不足 5 条导致的算法过滤。
+
+---
+
+### 9. 交互式新手漫游引导（Onboarding Tour）动效规范 (2026-10-19 固化与生产部署)
+1. **纯手势动效与去文字标签**：
+   - 第一步（CPK 切换）与第二步（查看推荐参数）统一采用金色点击手势（👆）与扩散光环波纹；
+   - **彻底移除手指下方的文字提示标签**：移除所有遮挡文字胶囊（如“点击切换查看 CPK 波动”、“点击查看推荐参数”等），保持按钮内容 100% 清晰可见；
+   - **按钮同步呼吸**：目标按钮（`#tour-tab-cpk`、`#tour-spec-action-table .tour-recommend-btn`）挂载 `.tour-highlight-pulse`，呈现 `scale(1.08)` 平滑微放大与琥珀金脉冲呼吸光晕；
+   - **双轨灵敏交互与平滑流转**：用户点击手势指示器或直接点击目标按钮均可立即触发切换，点击瞬间立即销毁手指并解除呼吸动效，平滑推进下一步。
+2. **发布状态**：
+   - 代码已通过 Vite 生产编译，运行 `deploy_to_server.py` 全量同步并完成远端服务自愈重启校验；
+   - 代码已 commit 并 push 到 Git 远端分支 `feature/kanban-onboarding-tour`。
+
+---
+
+### 10. 生产架构极简升级：彻底弃用 Nginx，全栈单端口 8088 后台静默自启 (2026-10-19 落地)
+1. **核心架构决议**：
+   - **彻底废除 Nginx**：不再运行 `nginx.exe` 与 `Nginx-Service`，根除 Windows 下 Nginx 进程分叉与 NSSM 守护假死崩溃历史顽疾；
+   - **全栈合一单端口 8088**：FastAPI 后端直接绑定监听 `0.0.0.0:8088`，同一端口兼顾分发 Vue 3 静态编译单页应用与全部 `/api` 业务接口；
+   - **用户零感知无缝迁移**：全厂访问地址维持原习惯 `http://10.246.97.159:8088` 绝对不变；
+   - **桌面 0 黑框 CMD 与开机自启动**：全厂仅保留唯一的系统服务 `FastAPI-Service`，开机无人登录也可在 10 秒内后台自启，进程意外闪退 1 秒内自动复活拉起。
+2. **部署发布闭环**：
+   - 本地 `run_server.py`、`backend/run_server.py`、`vite.config.js` 统一重定向到 8088；
+   - `deploy_to_server.py` 移除 Nginx 检查，实现自动兼容平滑过渡与健康轮询；
+   - 生产环境实测验证：`http://10.246.97.159:8088/` 前端与 API 均 200 OK 正常运转，全量代码已推送 GitHub。
+
