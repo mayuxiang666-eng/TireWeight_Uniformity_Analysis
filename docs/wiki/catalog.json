@@ -1,0 +1,196 @@
+{
+  "system_title": "智能分析系统技术文档",
+  "system_subtitle": "Intelligent Analysis System · 技术交接与系统维护 Wiki",
+  "version": "v1.1.2",
+  "last_updated": "2026-10-19",
+  "modules": [
+    {
+      "id": "01_system_architecture",
+      "number": "01",
+      "title": "系统全景架构与工程规范",
+      "icon": "01",
+      "badge": "基础骨架",
+      "desc": "系统定位、六层分层拓扑、服务解耦与依赖隔离红线",
+      "file": "01_system_architecture.md",
+      "sections": [
+        { "title": "1. 系统定位与核心业务目标", "anchor": "1-系统定位与核心业务目标" },
+        { "title": "2. 全栈技术选型与运行环境", "anchor": "2-全栈技术选型与运行环境" },
+        { "title": "3. 六层架构拓扑与数据流向", "anchor": "3-六层架构拓扑与数据流向" },
+        { "title": "4. 依赖隔离铁律与服务解耦注入机制", "anchor": "4-依赖隔离铁律与服务解耦注入机制" }
+      ]
+    },
+    {
+      "id": "02_data_sources_and_er",
+      "number": "02",
+      "title": "全流程数据源与实体关系拓扑",
+      "icon": "02",
+      "badge": "数据底座",
+      "desc": "Redshift大宽表、MES CGRS库、配方表与13道工序条码流转",
+      "file": "02_data_sources_and_er.md",
+      "sections": [
+        { "title": "1. 三大物理数据源与抽取边界", "anchor": "1-三大物理数据源与抽取边界" },
+        { "title": "2. 13道工序流转与单胎生命周期", "anchor": "2-13道工序流转与单胎生命周期" },
+        { "title": "3. 规格层级关系与模糊匹配规范", "anchor": "3-规格层级关系与模糊匹配规范" },
+        { "title": "4. 核心数据表字段字典与外键映射", "anchor": "4-核心数据表字段字典与外键映射" }
+      ]
+    },
+    {
+      "id": "03_etl_pipeline_and_engine",
+      "number": "03",
+      "title": "ETL 流式清洗管线与 DuckDB 内存引擎",
+      "icon": "03",
+      "badge": "管道与存储",
+      "desc": "安全水位线、DuckDB 4GB 内存保护、TG量纲统一与流式原子清洗",
+      "file": "03_etl_pipeline_and_engine.md",
+      "sections": [
+        { "title": "1. 增量拉取与安全水位线机制", "anchor": "1-增量拉取与安全水位线机制" },
+        { "title": "2. DuckDB 内存保护与溢出盘管理", "anchor": "2-duckdb-内存保护与溢出盘管理" },
+        { "title": "3. 流式原子清洗与核心数据转换规则", "anchor": "3-流式原子清洗与核心数据转换规则" },
+        { "title": "4. 数据库配置加密与常驻连接热自愈", "anchor": "4-数据库配置加密与常驻连接热自愈" }
+      ]
+    },
+    {
+      "id": "04_metrics_and_standard_cpk",
+      "number": "04",
+      "title": "17项质检指标统一定义与标准 CPK 引擎",
+      "icon": "04",
+      "badge": "指标标准",
+      "desc": "TU/TG/TB 17项指标量纲字典、单双侧标准CPK公式与零伪造准则",
+      "file": "04_metrics_and_standard_cpk.md",
+      "sections": [
+        { "title": "1. 17项工序质检指标全景定义表", "anchor": "1-17项工序质检指标全景定义表" },
+        { "title": "2. 物理量纲、单位与缩放系数 (Scale)", "anchor": "2-物理量纲单位与缩放系数-scale" },
+        { "title": "3. 配方公差 100% 严格遵循准则", "anchor": "3-配方公差-100-严格遵循准则" },
+        { "title": "4. 单侧与双侧标准 CPK 纯函数实现", "anchor": "4-单侧与双侧标准-cpk-纯函数实现" },
+        { "title": "5. 8小时生产时间偏移与全厂加权计算", "anchor": "5-8小时生产时间偏移与全厂加权计算" }
+      ]
+    },
+    {
+      "id": "05_core_algorithms_deepdive",
+      "number": "05",
+      "title": "核心归因算法与 CGRS 控制变量模型",
+      "icon": "05",
+      "badge": "算法中枢",
+      "desc": "产量平方根平滑、三级预警瀑布流、CGRS路径拆分与参数推荐",
+      "file": "05_core_algorithms_deepdive.md",
+      "sections": [
+        { "title": "1. 核心规格拉低贡献度评分 (Stable Score)", "anchor": "1-核心规格拉低贡献度评分-stable-score" },
+        { "title": "2. 产量平方根平滑机台贡献度算法 (Square-Root)", "anchor": "2-产量平方根平滑机台贡献度算法-square-root" },
+        { "title": "3. 三级状态指示判定瀑布流 [红/橙/黄]", "anchor": "3-三级状态指示球-判定瀑布流" },
+        { "title": "4. CGRS 调参因果分析与路径拆分引擎", "anchor": "4-cgrs-调参因果分析与路径拆分引擎" },
+        { "title": "5. 成型/硫化/终检多工段差异化推荐机制", "anchor": "5-成型硫化终检多工段差异化推荐机制" }
+      ]
+    },
+    {
+      "id": "06_frontend_dashboard_views",
+      "number": "06",
+      "title": "前端看板交互与组件状态流转",
+      "icon": "06",
+      "badge": "前端交互",
+      "desc": "四行大屏布局流转、7大核心图表组件、Pinia响应链与ECharts自适应",
+      "file": "06_frontend_dashboard_views.md",
+      "sections": [
+        { "title": "1. 看板整体四行布局与视觉流向", "anchor": "1-看板整体四行布局与视觉流向" },
+        { "title": "2. 7大核心业务组件职责与接口调用", "anchor": "2-7大核心业务组件职责与接口调用" },
+        { "title": "3. 全局状态响应链与 Pinia 状态树", "anchor": "3-全局状态响应链与-pinia-状态树" },
+        { "title": "4. ECharts 响应式重绘与实例内存防漏", "anchor": "4-echarts-响应式重绘与实例内存防漏" }
+      ]
+    },
+    {
+      "id": "07_devops_and_troubleshooting",
+      "number": "07",
+      "title": "系统运维部署、排错手册与红线守则",
+      "icon": "07",
+      "badge": "运维守则",
+      "desc": "局域网服务器部署、排错SOP、防劣铁律红线与配置密钥管理",
+      "file": "07_devops_and_troubleshooting.md",
+      "sections": [
+        { "title": "1. 生产环境局域网部署架构与自愈脚本", "anchor": "1-生产环境局域网部署架构与自愈脚本" },
+        { "title": "2. 配置文件与加密安全规范", "anchor": "2-配置文件与加密安全规范" },
+        { "title": "3. 常见疑难故障排查速查表 (Troubleshooting SOP)", "anchor": "3-常见疑难故障排查速查表-troubleshooting-sop" },
+        { "title": "4. 架构开发与数据维护红线 (防劣铁律)", "anchor": "4-架构开发与数据维护红线-防劣铁律" }
+      ]
+    }
+  ],
+  "mindmap_tree": {
+    "name": "轮胎质量与均匀性分析系统\n(TireWeight_Uniformity)",
+    "children": [
+      {
+        "name": "01. 系统全景架构",
+        "doc_id": "01_system_architecture",
+        "anchor": "1-系统定位与核心业务目标",
+        "children": [
+          { "name": "六层分层拓扑", "doc_id": "01_system_architecture", "anchor": "3-六层架构拓扑与数据流向" },
+          { "name": "核心层无状态约束", "doc_id": "01_system_architecture", "anchor": "4-依赖隔离铁律与服务解耦注入机制" },
+          { "name": "跨服务动态注入", "doc_id": "01_system_architecture", "anchor": "4-依赖隔离铁律与服务解耦注入机制" }
+        ]
+      },
+      {
+        "name": "02. 全流程数据源与ER",
+        "doc_id": "02_data_sources_and_er",
+        "anchor": "1-三大物理数据源与抽取边界",
+        "children": [
+          { "name": "Redshift产出大宽表", "doc_id": "02_data_sources_and_er", "anchor": "1-三大物理数据源与抽取边界" },
+          { "name": "MES CGRS调参库", "doc_id": "02_data_sources_and_er", "anchor": "1-三大物理数据源与抽取边界" },
+          { "name": "Recipes配方限值", "doc_id": "02_data_sources_and_er", "anchor": "1-三大物理数据源与抽取边界" },
+          { "name": "13道工序条码流转", "doc_id": "02_data_sources_and_er", "anchor": "2-13道工序流转与单胎生命周期" }
+        ]
+      },
+      {
+        "name": "03. ETL与DuckDB内存引擎",
+        "doc_id": "03_etl_pipeline_and_engine",
+        "anchor": "1-增量拉取与安全水位线机制",
+        "children": [
+          { "name": "安全水位线(Max-1天)", "doc_id": "03_etl_pipeline_and_engine", "anchor": "1-增量拉取与安全水位线机制" },
+          { "name": "DuckDB 4GB内存保护", "doc_id": "03_etl_pipeline_and_engine", "anchor": "2-duckdb-内存保护与溢出盘管理" },
+          { "name": "TG尺寸×1000换算mm", "doc_id": "03_etl_pipeline_and_engine", "anchor": "3-流式原子清洗与核心数据转换规则" },
+          { "name": "配置XOR对称加密", "doc_id": "03_etl_pipeline_and_engine", "anchor": "4-数据库配置加密与常驻连接热自愈" }
+        ]
+      },
+      {
+        "name": "04. 17项指标与标准CPK",
+        "doc_id": "04_metrics_and_standard_cpk",
+        "anchor": "1-17项工序质检指标全景定义表",
+        "children": [
+          { "name": "TU均匀性7项(RFPP/CONY...)", "doc_id": "04_metrics_and_standard_cpk", "anchor": "1-17项工序质检指标全景定义表" },
+          { "name": "TG几何尺寸7项(TBUL/TLRO...)", "doc_id": "04_metrics_and_standard_cpk", "anchor": "1-17项工序质检指标全景定义表" },
+          { "name": "TB动平衡3项(TBALW...)", "doc_id": "04_metrics_and_standard_cpk", "anchor": "1-17项工序质检指标全景定义表" },
+          { "name": "单/双侧CPK纯函数计算", "doc_id": "04_metrics_and_standard_cpk", "anchor": "4-单侧与双侧标准-cpk-纯函数实现" },
+          { "name": "8小时生产时间偏移", "doc_id": "04_metrics_and_standard_cpk", "anchor": "5-8小时生产时间偏移与全厂加权计算" }
+        ]
+      },
+      {
+        "name": "05. 核心归因与CGRS推荐",
+        "doc_id": "05_core_algorithms_deepdive",
+        "anchor": "1-核心规格拉低贡献度评分-stable-score",
+        "children": [
+          { "name": "规格拉低评分 StableScore", "doc_id": "05_core_algorithms_deepdive", "anchor": "1-核心规格拉低贡献度评分-stable-score" },
+          { "name": "机台平滑 ImpactScore (√N)", "doc_id": "05_core_algorithms_deepdive", "anchor": "2-产量平方根平滑机台贡献度算法-square-root" },
+          { "name": "三级预警瀑布流(红/橙/黄)", "doc_id": "05_core_algorithms_deepdive", "anchor": "3-三级状态指示球-判定瀑布流" },
+          { "name": "CGRS路径拆分(门槛≥5/失衡≤2.5)", "doc_id": "05_core_algorithms_deepdive", "anchor": "4-cgrs-调参因果分析与路径拆分引擎" },
+          { "name": "成型/硫化/终检推荐差异化", "doc_id": "05_core_algorithms_deepdive", "anchor": "5-成型硫化终检多工段差异化推荐机制" }
+        ]
+      },
+      {
+        "name": "06. 前端看板与交互流转",
+        "doc_id": "06_frontend_dashboard_views",
+        "anchor": "1-看板整体四行布局与视觉流向",
+        "children": [
+          { "name": "四行流转仪表盘布局", "doc_id": "06_frontend_dashboard_views", "anchor": "1-看板整体四行布局与视觉流向" },
+          { "name": "7大核心业务图表组件", "doc_id": "06_frontend_dashboard_views", "anchor": "2-7大核心业务组件职责与接口调用" },
+          { "name": "Pinia 全局状态响应链", "doc_id": "06_frontend_dashboard_views", "anchor": "3-全局状态响应链与-pinia-状态树" }
+        ]
+      },
+      {
+        "name": "07. 系统运维与排错SOP",
+        "doc_id": "07_devops_and_troubleshooting",
+        "anchor": "1-生产环境局域网部署架构与自愈脚本",
+        "children": [
+          { "name": "局域网共享部署(10.246.97.159)", "doc_id": "07_devops_and_troubleshooting", "anchor": "1-生产环境局域网部署架构与自愈脚本" },
+          { "name": "故障自愈与排错SOP", "doc_id": "07_devops_and_troubleshooting", "anchor": "3-常见疑难故障排查速查表-troubleshooting-sop" },
+          { "name": "防劣铁律红线准则", "doc_id": "07_devops_and_troubleshooting", "anchor": "4-架构开发与数据维护红线-防劣铁律" }
+        ]
+      }
+    ]
+  }
+}

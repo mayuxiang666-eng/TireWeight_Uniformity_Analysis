@@ -1,0 +1,3439 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能分析系统技术文档 · 技术交接与系统维护 Wiki</title>
+  
+  <!-- 外部高质量组件：ECharts 5, Marked, Mermaid, KaTeX, Highlight.js -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <style>
+    /* ==========================================================================
+       Claude Warm-Canvas Editorial Tokens (Anthropic 暖质象牙纸底 + 优雅黄橙主题色)
+       ========================================================================== */
+    :root {
+      /* Claude 经典象牙暖白纸质画布体系 */
+      --bg-base: #faf9f5;           /* Claude Canvas: 象牙暖白纸底 */
+      --bg-surface: #ffffff;        /* 纯白主表面 (卡片、阅读层) */
+      --bg-sidebar: #f5f0e8;        /* Claude Surface-soft: 柔暖奶油灰 */
+      --bg-surface-elevated: #efe9de; /* Claude Surface-card: 浮层浅暖色 */
+      --bg-code: #f4efe6;           /* 典雅书卷代码块浅底 */
+      --border-color: #e6dfd8;      /* Claude Hairline: 柔暖分割线 */
+      --border-strong: #d8cfc4;     /* 强分割线与高对比度边框 */
+      --border-focus: #d97706;      /* 黄橙高亮焦点环 */
+      
+      /* 高可读性炭墨文字阶梯 */
+      --text-main: #141413;         /* Claude Ink: 深烘焙炭黑 */
+      --text-body: #3d3d3a;         /* Claude Body: 舒适深炭灰正文 */
+      --text-muted: #6c6a64;        /* 次级辅助文字 */
+      --text-dim: #8e8b82;          /* 弱提示标签文字 */
+      
+      /* 核心黄橙主题与点缀色 */
+      --accent-primary: #d97706;    /* Warm Amber-Orange 优雅黄橙主色 */
+      --accent-primary-hover: #b45309; /* 悬浮深琥珀橙 */
+      --accent-orange: #ea580c;     /* 亮橙点缀 */
+      --accent-terracotta: #cc785c; /* Claude 经典赤陶色 */
+      --accent-teal: #5db8a6;       /* 灰绿草木 */
+      --accent-blue: #0284c7;
+      --accent-rose: #dc2626;
+      
+      /* 暖色调微徽章贴片 */
+      --tint-purple: #fef3e7;       /* 柔暖杏橙底 (用于高亮与激活卡片) */
+      --tint-purple-text: #b45309;  /* 琥珀深橙文字 */
+      --tint-orange: #fef3e7;
+      --tint-orange-text: #b45309;
+      --tint-amber: #fef7e6;
+      --tint-amber-text: #b45309;
+      --tint-terracotta: #faebe6;
+      --tint-terracotta-text: #cc785c;
+      --tint-blue: #eff6ff;
+      --tint-blue-text: #0284c7;
+      --tint-green: #edf7ed;
+      --tint-green-text: #1e7e34;
+      --tint-rose: #fef2f2;
+      --tint-rose-text: #dc2626;
+      --tint-gray: #ece7de;
+      --tint-gray-text: #5a5751;
+
+      /* 布局参数 */
+      --sidebar-width: 295px;
+      --toc-width: 0px;
+      --ai-drawer-width: 380px;
+      --header-height: 56px;
+      --radius-sm: 6px;
+      --radius-md: 9px;
+      --radius-lg: 14px;
+      --shadow-subtle: 0 1px 3px rgba(20, 20, 19, 0.04), 0 2px 6px rgba(20, 20, 19, 0.02);
+      --shadow-hover: 0 4px 14px rgba(217, 119, 6, 0.08);
+
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", Consolas, Monaco, "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-body);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 顶部导航 Header */
+    header.wiki-header {
+      height: var(--header-height);
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      z-index: 50;
+      flex-shrink: 0;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .brand-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-primary);
+      background: var(--tint-purple);
+      border: 1px solid rgba(217, 119, 6, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 3px 7px;
+      letter-spacing: 0.5px;
+      user-select: none;
+    }
+
+    .brand-titles h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+      letter-spacing: -0.2px;
+    }
+
+    .brand-titles p {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 视图切换按钮组 */
+    .view-mode-tabs {
+      display: flex;
+      background: var(--bg-sidebar);
+      padding: 2px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .view-mode-tab {
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .view-mode-tab:hover {
+      color: var(--text-main);
+    }
+
+    .view-mode-tab.is-active {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    /* 极简搜索框 */
+    .search-box {
+      position: relative;
+      width: 200px;
+    }
+
+    .search-input {
+      width: 100%;
+      height: 32px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 0 28px 0 10px;
+      color: var(--text-main);
+      font-size: 12px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+
+    .search-input:focus {
+      background: var(--bg-surface);
+      border-color: var(--border-focus);
+      width: 240px;
+      box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15);
+    }
+
+    .search-shortcut {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      font-family: var(--font-mono);
+      background: var(--bg-surface);
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: var(--text-dim);
+      border: 1px solid var(--border-color);
+    }
+
+    /* 按钮规范 (无图标纯文字) */
+    .btn {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      color: var(--text-main);
+      transition: all 0.15s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--bg-sidebar);
+      border-color: var(--border-strong);
+    }
+
+    .btn.is-active {
+      background: var(--tint-purple);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    .btn-sm {
+      height: 26px;
+      padding: 0 8px;
+      font-size: 11px;
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      border-color: var(--accent-primary);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-primary-hover);
+      color: #ffffff;
+    }
+
+    /* 主布局 */
+    main.wiki-layout {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ==========================================================================
+       左侧导航栏 (支持三角切换折叠/展开与拖拽调宽)
+       ========================================================================== */
+    aside.sidebar-tree {
+      width: var(--sidebar-width);
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      height: 100%;
+      overflow: hidden;
+      transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease;
+      position: relative;
+    }
+
+    /* 折叠状态 */
+    main.wiki-layout.sidebar-collapsed aside.sidebar-tree {
+      width: 0 !important;
+      min-width: 0 !important;
+      border-right: none !important;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .sidebar-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .module-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .module-card {
+      border-radius: var(--radius-sm);
+      margin-bottom: 3px;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+
+    .module-card:hover {
+      background: rgba(0, 0, 0, 0.035);
+    }
+
+    .module-card.is-active {
+      background: var(--bg-surface);
+      border-color: var(--border-color);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .module-header-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+    }
+
+    .module-number {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-surface-elevated);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .module-card.is-active .module-number {
+      background: var(--tint-purple);
+      color: var(--tint-purple-text);
+      border-color: rgba(217, 119, 6, 0.25);
+    }
+
+    .module-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .module-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .module-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .module-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--tint-gray);
+      color: var(--tint-gray-text);
+      flex-shrink: 0;
+    }
+
+    .module-card.is-active .module-badge {
+      background: var(--tint-purple);
+      color: var(--tint-purple-text);
+      font-weight: 600;
+    }
+
+    .module-sections {
+      padding: 2px 8px 10px 12px;
+      display: none;
+    }
+
+    .module-card.is-active .module-sections,
+    .module-card.is-expanded .module-sections {
+      display: block;
+    }
+
+    /* 整合在左侧目录内的章节导读与源码直达映射 */
+    .sidebar-toc-box {
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border-color);
+    }
+
+    .sidebar-section-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin: 8px 0 4px 6px;
+    }
+
+    .sidebar-toc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .sidebar-toc-link {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      border-left: 2px solid transparent;
+      transition: all 0.15s ease;
+      line-height: 1.4;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .sidebar-toc-indicator {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .sidebar-toc-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .sidebar-toc-link:hover {
+      color: var(--text-main);
+      background: rgba(0, 0, 0, 0.04);
+    }
+
+    .sidebar-toc-link:hover .sidebar-toc-indicator {
+      background: var(--accent-primary);
+    }
+
+    .sidebar-toc-link.depth-3 {
+      padding-left: 18px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* 选中的导读大纲项：琥珀橙高对比度激活标牌 */
+    .sidebar-toc-link.is-active {
+      color: var(--accent-primary) !important;
+      background: var(--tint-purple) !important;
+      border-left: 3px solid var(--accent-primary) !important;
+      font-weight: 600 !important;
+      box-shadow: 0 1px 3px rgba(217, 119, 6, 0.08);
+      padding-left: 9px;
+    }
+
+    .sidebar-toc-link.is-active .sidebar-toc-indicator {
+      background: var(--accent-primary);
+      width: 5px;
+      height: 5px;
+    }
+
+    .sidebar-toc-link.depth-3.is-active {
+      padding-left: 18px;
+    }
+
+    .sidebar-source-box {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border-color);
+    }
+
+    .section-item {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      padding: 3px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-item:before {
+      content: "-";
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+
+    .section-item:hover {
+      color: var(--accent-primary);
+      background: rgba(0, 0, 0, 0.04);
+    }
+
+    /* 侧边栏折叠/展开三角按钮 (吸附在边缘，随拖拽移动，折叠时吸附在最左侧) */
+    .sidebar-toggle-triangle {
+      position: absolute;
+      top: 68px;
+      left: calc(var(--sidebar-width) - 13px);
+      width: 24px;
+      height: 24px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 50%;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 45;
+      transition: left 0.22s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s, border-color 0.15s, transform 0.15s;
+      user-select: none;
+    }
+
+    .sidebar-toggle-triangle:hover {
+      background: var(--bg-sidebar);
+      border-color: var(--accent-primary);
+      transform: scale(1.12);
+    }
+
+    .sidebar-toggle-triangle .triangle-icon {
+      font-size: 9px;
+      color: var(--text-muted);
+      line-height: 1;
+      display: inline-block;
+      transition: color 0.15s;
+    }
+
+    .sidebar-toggle-triangle:hover .triangle-icon {
+      color: var(--accent-primary);
+    }
+
+    main.wiki-layout.sidebar-collapsed .sidebar-toggle-triangle {
+      left: 6px !important;
+    }
+
+    main.wiki-layout.is-resizing .sidebar-toggle-triangle,
+    main.wiki-layout.is-resizing aside.sidebar-tree {
+      transition: none !important;
+    }
+
+    /* ==========================================================================
+       拖拽调宽手柄 (Draggable Resizer Gutters)
+       ========================================================================== */
+    .resizer-gutter {
+      width: 5px;
+      background: transparent;
+      cursor: col-resize;
+      position: relative;
+      flex-shrink: 0;
+      z-index: 25;
+      transition: background-color 0.2s ease;
+      user-select: none;
+    }
+
+    .resizer-gutter:hover,
+    .resizer-gutter.is-dragging {
+      background-color: var(--accent-primary);
+    }
+
+    /* 中间工作区 */
+    section.wiki-content-area {
+      flex: 1;
+      height: 100%;
+      overflow-y: auto;
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      min-width: 0;
+    }
+
+    /* 网状知识图谱画布 */
+    #mindmap-container {
+      width: 100%;
+      height: 100%;
+      display: none;
+      background-color: #ffffff;
+      background-image: radial-gradient(#e5e7eb 1.5px, transparent 1.5px);
+      background-size: 24px 24px;
+    }
+
+    #mindmap-container.is-active {
+      display: block;
+    }
+
+    /* 正文阅读区 */
+    .article-container {
+      flex: 1;
+      display: none;
+      padding: 36px 64px 100px 64px;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+      background: var(--bg-surface);
+      position: relative;
+    }
+
+    .article-container.is-active {
+      display: block;
+    }
+
+    /* 在线编辑器容器 (支持左右分栏拖拽调整) */
+    .editor-container {
+      flex: 1;
+      display: none;
+      height: 100%;
+      overflow: hidden;
+      width: 100%;
+    }
+
+    .editor-container.is-active {
+      display: flex;
+    }
+
+    .editor-pane-code {
+      flex: 1;
+      height: 100%;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-surface);
+      min-width: 220px;
+    }
+
+    .editor-toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-sidebar);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .editor-textarea {
+      flex: 1;
+      width: 100%;
+      border: none;
+      outline: none;
+      padding: 20px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-main);
+      background: var(--bg-surface);
+      resize: none;
+    }
+
+    .editor-pane-preview {
+      flex: 1;
+      height: 100%;
+      overflow-y: auto;
+      padding: 30px 40px;
+      background: var(--bg-surface);
+      min-width: 220px;
+    }
+
+    /* 右侧导读大纲 TOC (已并入左侧目录，无需独立板块) */
+    aside.toc-nav,
+    #resizer-toc {
+      display: none !important;
+    }
+
+    .toc-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+
+    .toc-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .toc-link {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-decoration: none;
+      display: block;
+      padding: 5px 8px;
+      border-radius: var(--radius-sm);
+      border-left: 2px solid transparent;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.4;
+    }
+
+    .toc-link:hover {
+      color: var(--text-main);
+      background: var(--bg-sidebar);
+    }
+
+    .toc-link.depth-3 {
+      padding-left: 18px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    /* 选中的大纲标题：鲜明清晰高亮 */
+    .toc-link.is-active {
+      color: var(--accent-primary) !important;
+      background: var(--tint-purple) !important;
+      border-left: 3px solid var(--accent-primary) !important;
+      font-weight: 600 !important;
+      box-shadow: 0 1px 3px rgba(86, 69, 212, 0.08);
+      padding-left: 9px;
+    }
+
+    .toc-link.depth-3.is-active {
+      padding-left: 18px;
+    }
+
+    /* 对应源码直达映射文件卡片 */
+    .source-files-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .source-file-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-body);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .source-file-item:hover {
+      background: var(--tint-purple);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(86, 69, 212, 0.08);
+    }
+
+    .source-file-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
+      flex-shrink: 0;
+      letter-spacing: 0.5px;
+    }
+
+    .source-file-badge.badge-py {
+      background: var(--tint-blue);
+      color: var(--tint-blue-text);
+      border-color: rgba(0, 117, 222, 0.25);
+    }
+
+    .source-file-badge.badge-vue {
+      background: var(--tint-green);
+      color: var(--tint-green-text);
+      border-color: rgba(26, 174, 57, 0.25);
+    }
+
+    .source-file-badge.badge-js {
+      background: var(--tint-amber);
+      color: var(--tint-amber-text);
+      border-color: rgba(217, 119, 6, 0.25);
+    }
+
+    .source-file-badge.badge-bat {
+      background: var(--tint-gray);
+      color: var(--text-main);
+      border-color: var(--border-strong);
+    }
+
+    .source-file-path {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      direction: rtl;
+      text-align: left;
+    }
+
+    .source-file-path .file-name {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .source-file-item:hover .source-file-path .file-name {
+      color: var(--accent-primary);
+    }
+
+    .source-file-action {
+      font-size: 10px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .source-file-item:hover .source-file-action {
+      opacity: 1;
+      color: var(--accent-primary);
+    }
+
+    /* ==========================================================================
+       图表与架构图放大功能 (Diagram Zoom & Lightbox)
+       ========================================================================== */
+    .mermaid-container {
+      margin: 24px 0;
+      overflow: hidden;
+      text-align: center;
+      padding: 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      position: relative;
+      cursor: zoom-in;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .mermaid-container svg {
+      max-width: 100% !important;
+      height: auto !important;
+      display: block;
+      margin: 0 auto;
+    }
+
+    .mermaid-container:hover {
+      border-color: var(--border-strong);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .mermaid-container .diagram-actions {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      opacity: 0.85;
+      transition: opacity 0.15s ease;
+      z-index: 5;
+    }
+
+    .mermaid-container:hover .diagram-actions {
+      opacity: 1;
+    }
+
+    .diagram-zoom-btn {
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      color: var(--text-main);
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .diagram-zoom-btn:hover {
+      background: var(--tint-purple);
+      color: var(--accent-primary);
+      border-color: var(--accent-primary);
+    }
+
+    /* 全屏放大灯箱模态框 */
+    .diagram-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(6px);
+      display: flex;
+      flex-direction: column;
+      animation: fadeIn 0.15s ease-out;
+    }
+
+    .lightbox-header {
+      height: 48px;
+      background: rgba(255, 255, 255, 0.95);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .lightbox-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .lightbox-zoom-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: var(--tint-purple);
+      color: var(--accent-primary);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .lightbox-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .lightbox-canvas {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .lightbox-canvas:active {
+      cursor: grabbing;
+    }
+
+    .lightbox-content-wrapper {
+      transform-origin: center center;
+      transition: transform 0.08s ease-out;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    .lightbox-svg-card {
+      background: #ffffff;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+      display: inline-block;
+      line-height: normal !important;
+      user-select: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      text-align: left;
+    }
+
+    .lightbox-svg-card svg {
+      max-width: none !important;
+      max-height: none !important;
+      display: block;
+      background: transparent !important;
+      overflow: visible !important;
+    }
+
+    .lightbox-svg-card svg foreignObject {
+      overflow: visible !important;
+      line-height: normal !important;
+    }
+
+    .lightbox-svg-card svg foreignObject div {
+      line-height: 1.4 !important;
+      font-family: var(--font-sans) !important;
+    }
+
+    .lightbox-svg-card img {
+      max-width: none !important;
+      max-height: none !important;
+      display: block;
+    }
+
+    /* ==========================================================================
+       AI 智能助手抽屉 (AI Chat Drawer)
+       ========================================================================== */
+    aside.ai-drawer {
+      width: var(--ai-drawer-width);
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-color);
+      display: none;
+      flex-direction: column;
+      flex-shrink: 0;
+      height: 100%;
+      overflow: hidden;
+      z-index: 30;
+      box-shadow: -2px 0 12px rgba(0,0,0,0.03);
+    }
+
+    aside.ai-drawer.is-open {
+      display: flex;
+    }
+
+    .ai-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-sidebar);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .ai-header-titles .ai-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .ai-header-titles .ai-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .ai-header-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .ai-context-pill {
+      padding: 6px 14px;
+      background: var(--tint-purple);
+      border-bottom: 1px solid rgba(217, 119, 6, 0.15);
+      font-size: 11.5px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .ai-context-pill strong {
+      color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    .ai-quick-prompts {
+      padding: 8px 12px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .ai-quick-pill {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      cursor: pointer;
+      color: var(--text-body);
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .ai-quick-pill:hover {
+      background: var(--tint-purple);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .ai-messages-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #fafaf9;
+    }
+
+    .ai-msg {
+      display: flex;
+      flex-direction: column;
+      max-width: 92%;
+      animation: fadeIn 0.15s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .ai-msg-user {
+      align-self: flex-end;
+      background: var(--accent-primary);
+      color: #ffffff;
+      padding: 9px 13px;
+      border-radius: 8px 8px 2px 8px;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+    .ai-msg-assistant {
+      align-self: flex-start;
+      background: #ffffff;
+      color: var(--text-body);
+      padding: 12px 14px;
+      border-radius: 8px 8px 8px 2px;
+      border: 1px solid var(--border-color);
+      font-size: 12.5px;
+      line-height: 1.65;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .ai-msg-assistant p {
+      margin-bottom: 8px;
+    }
+
+    .ai-msg-assistant p:last-child {
+      margin-bottom: 0;
+    }
+
+    .ai-msg-assistant pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border-color);
+      padding: 8px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin: 8px 0;
+      font-size: 11.5px;
+    }
+
+    .ai-msg-assistant table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 11.5px;
+    }
+
+    .ai-msg-assistant th, .ai-msg-assistant td {
+      border: 1px solid var(--border-color);
+      padding: 4px 8px;
+    }
+
+    .ai-msg-meta {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      align-self: flex-start;
+    }
+
+    .ai-input-box {
+      padding: 12px;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .ai-textarea {
+      width: 100%;
+      height: 64px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--text-main);
+      background: var(--bg-sidebar);
+      outline: none;
+      resize: none;
+      transition: all 0.15s ease;
+    }
+
+    .ai-textarea:focus {
+      background: var(--bg-surface);
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px rgba(86, 69, 212, 0.1);
+    }
+
+    .ai-input-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .ai-indicator {
+      font-size: 10.5px;
+      color: var(--text-dim);
+    }
+
+    /* ==========================================================================
+       AI 设置模态框 (AI Settings Modal)
+       ========================================================================== */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(2px);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.15s ease;
+    }
+
+    .modal-card {
+      width: 480px;
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-sidebar);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .modal-body {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-body);
+    }
+
+    .form-input, .form-select {
+      height: 32px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 0 10px;
+      font-size: 12px;
+      color: var(--text-main);
+      background: var(--bg-sidebar);
+      outline: none;
+    }
+
+    .form-input:focus, .form-select:focus {
+      border-color: var(--accent-primary);
+      background: var(--bg-surface);
+    }
+
+    .form-hint {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .modal-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-sidebar);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* ==========================================================================
+       划词高亮工具条与高亮样式 (Text Highlighter)
+       ========================================================================== */
+    .highlight-toolbar {
+      position: absolute;
+      display: none;
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+      padding: 4px;
+      gap: 4px;
+      z-index: 1000;
+      align-items: center;
+      user-select: none;
+      animation: popIn 0.15s ease-out;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(6px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .hl-btn {
+      border: none;
+      background: transparent;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-main);
+      transition: all 0.15s ease;
+    }
+
+    .hl-btn:hover {
+      background: var(--bg-sidebar);
+    }
+
+    .hl-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      display: inline-block;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .hl-swatch.swatch-yellow { background-color: #fef08a; }
+    .hl-swatch.swatch-green { background-color: #bbf7d0; }
+    .hl-swatch.swatch-blue { background-color: #bfdbfe; }
+    .hl-swatch.swatch-purple { background-color: #e9d5ff; }
+
+    mark, .hl-yellow {
+      background-color: #fef08a !important;
+      color: #713f12 !important;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .hl-green {
+      background-color: #bbf7d0 !important;
+      color: #14532d !important;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .hl-blue {
+      background-color: #bfdbfe !important;
+      color: #1e3a8a !important;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .hl-purple {
+      background-color: #e9d5ff !important;
+      color: #581c87 !important;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .mermaid-fallback {
+      margin: 20px 0;
+      background: var(--bg-code);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .mermaid-fallback-header {
+      padding: 6px 12px;
+      background: var(--bg-sidebar);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    /* Markdown 优雅排版引擎 */
+    .markdown-body {
+      font-size: 14.5px;
+      color: var(--text-body);
+      line-height: 1.8;
+    }
+
+    .markdown-body h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text-main);
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+      letter-spacing: -0.5px;
+    }
+
+    .markdown-body h2 {
+      font-size: 19px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-top: 36px;
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-color);
+      letter-spacing: -0.3px;
+    }
+
+    .markdown-body h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-top: 24px;
+      margin-bottom: 10px;
+    }
+
+    .markdown-body p {
+      margin-bottom: 16px;
+      color: var(--text-body);
+    }
+
+    .markdown-body ul, .markdown-body ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+    }
+
+    .markdown-body li {
+      margin-bottom: 5px;
+    }
+
+    .markdown-body pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+
+    .markdown-body code {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+    }
+
+    .markdown-body p code, .markdown-body li code {
+      background: var(--tint-gray);
+      color: #eb5757;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+      border: 1px solid rgba(0,0,0,0.04);
+    }
+
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 13px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
+    .markdown-body th, .markdown-body td {
+      border: 1px solid var(--border-color);
+      padding: 9px 13px;
+      text-align: left;
+    }
+
+    .markdown-body th {
+      background: var(--bg-sidebar);
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .markdown-body tr:nth-child(even) {
+      background: #fafaf9;
+    }
+
+    .markdown-body blockquote {
+      border-left: 3px solid var(--accent-primary);
+      padding: 12px 18px;
+      background: var(--tint-purple);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin-bottom: 20px;
+      color: var(--text-body);
+    }
+
+    .markdown-body a {
+      color: #b45309;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(217, 119, 6, 0.35);
+      transition: all 0.15s ease;
+    }
+
+    .markdown-body a:hover {
+      color: var(--accent-primary);
+      border-bottom-color: var(--accent-primary);
+      background: rgba(217, 119, 6, 0.08);
+    }
+
+    /* 吐司通知 Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 10px 18px;
+      background: #ffffff;
+      color: var(--text-main);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      border: 1px solid var(--border-strong);
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      font-weight: 500;
+      z-index: 1000;
+      animation: slideUp 0.25s ease;
+    }
+
+    /* ==========================================================================
+       AI 助手可拖动悬浮球 (Draggable Floating Ball)
+       ========================================================================== */
+    .ai-floating-ball {
+      position: fixed;
+      right: 28px;
+      bottom: 32px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(217, 119, 6, 0.38), 0 2px 6px rgba(0, 0, 0, 0.08);
+      cursor: grab;
+      user-select: none;
+      z-index: 100;
+      transition: box-shadow 0.2s ease, transform 0.15s ease;
+      border: 2px solid rgba(255, 255, 255, 0.75);
+      touch-action: none;
+    }
+
+    .ai-floating-ball:hover {
+      transform: scale(1.08);
+      box-shadow: 0 6px 22px rgba(217, 119, 6, 0.5), 0 3px 8px rgba(0, 0, 0, 0.12);
+    }
+
+    .ai-floating-ball:active,
+    .ai-floating-ball.is-dragging {
+      cursor: grabbing;
+      transform: scale(0.96);
+      box-shadow: 0 2px 10px rgba(217, 119, 6, 0.4);
+    }
+
+    .ai-floating-ball.is-active {
+      background: linear-gradient(135deg, #b45309 0%, #92400e 100%);
+      box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.35), 0 6px 20px rgba(180, 83, 9, 0.45);
+    }
+
+    .ai-ball-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .ai-ball-text-top {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: 0.5px;
+    }
+
+    .ai-ball-text-sub {
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+      margin-top: 1px;
+      opacity: 0.95;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶栏 Header (已移除顶部折叠侧栏按钮) -->
+  <header class="wiki-header">
+    <div class="header-brand" onclick="switchViewMode('mindmap')">
+      <div class="brand-badge">IA</div>
+      <div class="brand-titles">
+        <h1 id="app-title">智能分析系统技术文档</h1>
+        <p>Intelligent Analysis System · 技术交接与系统维护 Wiki</p>
+      </div>
+    </div>
+
+    <!-- 视图切换：网状图谱 vs 章节精读 vs 在线维护 -->
+    <div class="view-mode-tabs">
+      <button id="tab-mindmap" class="view-mode-tab is-active" onclick="switchViewMode('mindmap')">
+        <span>网状知识图谱</span>
+      </button>
+      <button id="tab-doc" class="view-mode-tab" onclick="switchViewMode('doc')">
+        <span>章节精读文档</span>
+      </button>
+      <button id="tab-editor" class="view-mode-tab" onclick="switchViewMode('editor')">
+        <span>在线维护修改</span>
+      </button>
+    </div>
+
+    <div class="header-controls">
+      <!-- 极简搜索 -->
+      <div class="search-box">
+        <input type="text" id="wiki-search" class="search-input" placeholder="全局搜索指标、算法、表名..." oninput="handleGlobalSearch(this.value)" />
+        <span class="search-shortcut">/</span>
+      </div>
+
+      <!-- 保存修改按钮 -->
+      <button id="btn-save-disk" class="btn btn-primary" onclick="saveCurrentDocToDisk()">
+        <span>保存到本地</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主布局 (支持各分区拖拽调宽) -->
+  <main class="wiki-layout" id="wiki-main-layout">
+    
+    <!-- 左侧：多级树状导航目录 -->
+    <aside class="sidebar-tree" id="sidebar-tree">
+      <div class="sidebar-header">
+        <span>7 大核心交接模块</span>
+        <span id="module-counter" style="color: var(--accent-primary); font-family: var(--font-mono);">7 Modules</span>
+      </div>
+      <div id="module-list" class="module-list">
+        <!-- 动态渲染 7 大模块列表 -->
+      </div>
+    </aside>
+
+    <!-- 侧边栏折叠/展开三角按钮 (随侧栏位置自适应定位，展开为◀，折叠为▶) -->
+    <div id="sidebar-toggle-triangle" class="sidebar-toggle-triangle" onclick="toggleSidebar()" title="折叠/展开侧边栏">
+      <span id="sidebar-triangle-icon" class="triangle-icon">◀</span>
+    </div>
+
+    <!-- 侧边栏拖拽调宽手柄 -->
+    <div id="resizer-sidebar" class="resizer-gutter" title="按住拖拽调整侧栏宽度"></div>
+
+    <!-- 中间：主呈现工作区 -->
+    <section class="wiki-content-area" id="content-area">
+      <!-- 1. 网状力导向知识图谱 -->
+      <div id="mindmap-container" class="is-active"></div>
+
+      <!-- 2. 章节精读 Markdown 渲染区 -->
+      <div id="article-container" class="article-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="current-doc-badge" class="module-badge">核心模块</span>
+            <span id="current-doc-mtime" style="font-size: 11px; color: var(--text-dim); font-family: var(--font-mono);">更新于 2026-10-19</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn" onclick="toggleHighlightTip()">划词高亮工具</button>
+            <button class="btn" onclick="switchViewMode('editor')">编辑本章节</button>
+            <button class="btn" onclick="switchViewMode('mindmap')">查看网状图谱</button>
+          </div>
+        </div>
+        <article id="markdown-viewer" class="markdown-body"></article>
+      </div>
+
+      <!-- 3. 双栏在线 Markdown 编辑器 (支持中间拖拽手柄调整分栏比例) -->
+      <div id="editor-container" class="editor-container">
+        <div class="editor-pane-code" id="editor-pane-code">
+          <div class="editor-toolbar">
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">Markdown 源码编辑 (支持实时 KaTeX 公式与自动存盘)</span>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn" onclick="insertHighlightTag('yellow')">黄色高亮</button>
+              <button class="btn" onclick="insertHighlightTag('green')">绿色高亮</button>
+              <button class="btn btn-primary" onclick="saveCurrentDocToDisk()">立即回写磁盘</button>
+              <button class="btn" onclick="switchViewMode('doc')">退出编辑</button>
+            </div>
+          </div>
+          <textarea id="editor-textarea" class="editor-textarea" spellcheck="false" oninput="handleEditorInput()"></textarea>
+        </div>
+
+        <!-- 编辑器分栏拖拽手柄 -->
+        <div id="resizer-editor" class="resizer-gutter" title="按住拖拽调整代码与预览比例"></div>
+
+        <div class="editor-pane-preview" id="editor-pane-preview">
+          <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 14px; font-weight: 700;">实时排版渲染预览 (Live Preview)</div>
+          <article id="editor-preview" class="markdown-body"></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI 助手抽屉拖拽手柄 -->
+    <div id="resizer-ai" class="resizer-gutter" title="按住拖拽调整 AI 对话窗宽度" style="display: none;"></div>
+
+    <!-- 右侧：AI 智能技术问答助手抽屉 -->
+    <aside id="ai-drawer" class="ai-drawer">
+      <div class="ai-header">
+        <div class="ai-header-titles">
+          <div class="ai-title">技术交接 AI 助手</div>
+          <div class="ai-subtitle">基于全流程指标与算法知识库</div>
+        </div>
+        <div class="ai-header-actions">
+          <button class="btn btn-sm" onclick="openAiSettingsModal()">设置</button>
+          <button class="btn btn-sm" onclick="clearAiChatHistory()">清空</button>
+          <button class="btn btn-sm" onclick="toggleAiDrawer(false)">收起</button>
+        </div>
+      </div>
+
+      <div class="ai-context-pill">
+        <span>当前知识上下文：</span>
+        <strong id="ai-current-doc-label">01_system_architecture</strong>
+      </div>
+
+      <div class="ai-quick-prompts">
+        <span class="ai-quick-pill" onclick="sendQuickPrompt('帮我详细讲解产量平方根平滑算法的推导逻辑')">解释平方根平滑</span>
+        <span class="ai-quick-pill" onclick="sendQuickPrompt('CGRS 调参因果分析为什么要求 N>=5 且失衡比<=2.5？')">CGRS 路径拆分</span>
+        <span class="ai-quick-pill" onclick="sendQuickPrompt('RFPP 单侧上限与 CONY 双侧公差 CPK 如何计算？')">CPK 纯函数公式</span>
+        <span class="ai-quick-pill" onclick="sendQuickPrompt('如果 DuckDB 报内存溢出，标准排查 SOP 是什么？')">DuckDB 排错 SOP</span>
+        <span class="ai-quick-pill" onclick="sendQuickPrompt('总结当前章节的核心架构设计与防劣红线')">总结本章要点</span>
+      </div>
+
+      <div id="ai-messages-list" class="ai-messages-list">
+        <!-- 初始欢迎语 -->
+        <div class="ai-msg ai-msg-assistant">
+          <p>您好！我是轮胎生产质量与均匀性系统的技术交接 AI 助手。已装载全厂 17 项指标字典、DuckDB 内存管理、平方根平滑及 CGRS 控制变量算法。</p>
+          <p>您可以随时向我提问关于公式、算法推导、架构设计或运维排错方案！</p>
+        </div>
+      </div>
+
+      <div class="ai-input-box">
+        <textarea id="ai-user-input" class="ai-textarea" placeholder="输入提问 (Enter 发送，Shift+Enter 换行)..." onkeydown="handleAiInputKeydown(event)"></textarea>
+        <div class="ai-input-footer">
+          <span id="ai-provider-indicator" class="ai-indicator">内置工业知识引擎 (即时回答)</span>
+          <button id="ai-send-btn" class="btn btn-primary" onclick="sendAiMessage()">发送</button>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- AI 助手可拖动悬浮球 (Draggable Floating Ball) -->
+  <div id="ai-floating-ball" class="ai-floating-ball" title="按住可拖动位置 · 点击展开/收起 AI 助手">
+    <div class="ai-ball-inner">
+      <span class="ai-ball-text-top">AI</span>
+      <span class="ai-ball-text-sub">助手</span>
+    </div>
+  </div>
+
+  <!-- 浮动划词高亮工具条 Floating Highlight Toolbar -->
+  <div id="highlight-toolbar" class="highlight-toolbar">
+    <button class="hl-btn" onclick="applyHighlight('yellow')">
+      <span class="hl-swatch swatch-yellow"></span>黄色高亮
+    </button>
+    <button class="hl-btn" onclick="applyHighlight('green')">
+      <span class="hl-swatch swatch-green"></span>绿色高亮
+    </button>
+    <button class="hl-btn" onclick="applyHighlight('blue')">
+      <span class="hl-swatch swatch-blue"></span>蓝色高亮
+    </button>
+    <button class="hl-btn" onclick="applyHighlight('purple')">
+      <span class="hl-swatch swatch-purple"></span>紫色高亮
+    </button>
+    <button class="hl-btn" onclick="applyHighlight('clear')">
+      清除高亮
+    </button>
+  </div>
+
+  <!-- 图表放大灯箱模态框 (Diagram Zoom Lightbox) -->
+  <div id="diagram-lightbox" class="diagram-lightbox" style="display: none;">
+    <div class="lightbox-header">
+      <div class="lightbox-title">
+        <span>拓扑图详情 (支持滚轮缩放与鼠标拖拽平移)</span>
+        <span id="lightbox-zoom-level" class="lightbox-zoom-badge">100%</span>
+      </div>
+      <div class="lightbox-actions">
+        <button class="btn btn-sm" onclick="zoomLightbox(0.2)">放大 (+)</button>
+        <button class="btn btn-sm" onclick="zoomLightbox(-0.2)">缩小 (-)</button>
+        <button class="btn btn-sm" onclick="resetLightboxZoom()">1:1 还原</button>
+        <button class="btn btn-sm" onclick="fitLightboxZoom()">自适应窗口</button>
+        <button class="btn btn-sm btn-primary" onclick="closeDiagramLightbox()">关闭 (ESC)</button>
+      </div>
+    </div>
+    <div class="lightbox-canvas" id="lightbox-canvas" onwheel="handleLightboxWheel(event)">
+      <div class="lightbox-content-wrapper" id="lightbox-content-wrapper">
+        <!-- 动态克隆的高清矢量 SVG 图表 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 模型设置模态框 -->
+  <div id="ai-settings-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">AI 对话助手连接设置</div>
+        <button class="btn btn-sm" onclick="closeAiSettingsModal()">关闭</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">服务提供方 (Provider)</label>
+          <select id="setting-ai-provider" class="form-select" onchange="handleAiProviderChange()">
+            <option value="builtin">内置领域知识引擎 (离线即用，推荐)</option>
+            <option value="openai_compatible">OpenAI / DeepSeek / Ollama 兼容接口</option>
+            <option value="gemini">Google Gemini 官方接口</option>
+          </select>
+          <div class="form-hint">内置引擎已内嵌本工程全部算法公式、数据流拓扑与排错手册，无需联网及密钥。</div>
+        </div>
+        <div id="field-base-url" class="form-group">
+          <label class="form-label">接口地址 (Base URL)</label>
+          <input type="text" id="setting-ai-url" class="form-input" placeholder="https://api.deepseek.com/v1 或 http://localhost:11434/v1" />
+        </div>
+        <div id="field-model" class="form-group">
+          <label class="form-label">模型名称 (Model)</label>
+          <input type="text" id="setting-ai-model" class="form-input" placeholder="deepseek-chat / gpt-4o-mini / gemini-1.5-flash / qwen2.5:7b" />
+        </div>
+        <div id="field-api-key" class="form-group">
+          <label class="form-label">API 密钥 (API Key)</label>
+          <input type="password" id="setting-ai-key" class="form-input" placeholder="sk-..." />
+          <div id="setting-key-status" class="form-hint"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeAiSettingsModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveAiSettings()">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 浮动通知 Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // --- 全局数据与状态机 ---
+    let wikiCatalog = null;
+    let currentDocId = "01_system_architecture";
+    let currentDocContent = "";
+    let currentViewMode = "mindmap"; // "mindmap" | "doc" | "editor"
+    let mindmapChart = null;
+    let aiChatHistory = [];
+
+    // 灯箱缩放状态
+    let currentLightboxScale = 1.0;
+    let lightboxPanX = 0;
+    let lightboxPanY = 0;
+    let isPanningLightbox = false;
+    let startPanX = 0;
+    let startPanY = 0;
+
+    // 默认源码文件映射字典
+    const SOURCE_FILE_MAP = {
+      "01_system_architecture": ["backend/main.py", "backend/core/config.py"],
+      "02_data_sources_and_er": ["backend/etl/fetch_data.py", "backend/services/process_flow_service.py"],
+      "03_etl_pipeline_and_engine": ["backend/etl/clean_data.py", "backend/core/db.py"],
+      "04_metrics_and_standard_cpk": ["backend/core/cpk.py", "backend/core/indicators.py", "backend/services/trend_service.py"],
+      "05_core_algorithms_deepdive": ["backend/services/machine_service.py", "backend/services/cgrs_service.py", "backend/services/article_service.py"],
+      "06_frontend_dashboard_views": ["src/views/Dashboard.vue", "src/store/filterStore.js", "src/components/tables/CoreSpecActionTable.vue"],
+      "07_devops_and_troubleshooting": ["deploy_to_server.py", "一键部署到服务器.bat", "backend/config/db_config.json"]
+    };
+
+    // 初始化程序
+    window.addEventListener("DOMContentLoaded", async () => {
+      initMarkedConfig();
+      initMermaidConfig();
+      restoreSavedPreferences();
+      await loadCatalog();
+      renderSidebarModules();
+      initNetworkGraph();
+      initTextHighlighter();
+      initResizers();
+      initLightboxEvents();
+      initTocScrollspy();
+      bindKeyboardShortcuts();
+      loadAiConfigIndicator();
+      initAiFloatingBall();
+
+      // 默认加载第一章内容
+      await loadDoc(currentDocId, false);
+    });
+
+    // 恢复用户保存的宽度与折叠状态
+    function restoreSavedPreferences() {
+      const savedSidebarW = localStorage.getItem("wiki_sidebar_width");
+      if (savedSidebarW) {
+        document.documentElement.style.setProperty("--sidebar-width", savedSidebarW + "px");
+      }
+      const savedTocW = localStorage.getItem("wiki_toc_width");
+      if (savedTocW) {
+        document.documentElement.style.setProperty("--toc-width", savedTocW + "px");
+      }
+      const savedAiW = localStorage.getItem("wiki_ai_drawer_width");
+      if (savedAiW) {
+        document.documentElement.style.setProperty("--ai-drawer-width", savedAiW + "px");
+      }
+      const isSidebarCollapsed = localStorage.getItem("wiki_sidebar_collapsed") === "1";
+      if (isSidebarCollapsed) {
+        toggleSidebar(false);
+      }
+    }
+
+    // 快捷键支持
+    function bindKeyboardShortcuts() {
+      window.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          document.getElementById("wiki-search").focus();
+        }
+        if (e.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+          e.preventDefault();
+          document.getElementById("wiki-search").focus();
+        }
+        if (e.key === "Escape") {
+          closeDiagramLightbox();
+          closeAiSettingsModal();
+        }
+      });
+    }
+
+    // 初始化 Marked 编译器
+    function initMarkedConfig() {
+      marked.setOptions({
+        highlight: function(code, lang) {
+          if (lang && hljs.getLanguage(lang)) {
+            return hljs.highlight(code, { language: lang }).value;
+          }
+          return hljs.highlightAuto(code).value;
+        },
+        breaks: true,
+        gfm: true
+      });
+    }
+
+    // 初始化 Mermaid 配置 (开启 suppressErrorRendering，绝不渲染报错炸弹)
+    function initMermaidConfig() {
+      if (window.mermaid) {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'neutral',
+          securityLevel: 'loose',
+          suppressErrorRendering: true
+        });
+      }
+    }
+
+    // Markdown 预处理 (解析高亮标记 ==text== 为 <mark class="hl-yellow">)
+    function preprocessMarkdown(text) {
+      if (!text) return "";
+      return text.replace(/==([^=\n\r]+)==/g, '<mark class="hl-yellow">$1</mark>');
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ==========================================================================
+    // 左侧导航栏展开/折叠控制 (纯三角控制，随侧栏移动)
+    // ==========================================================================
+    function toggleSidebar(forceOpen) {
+      const mainLayout = document.getElementById("wiki-main-layout");
+      const triangleIcon = document.getElementById("sidebar-triangle-icon");
+      const toggleBtn = document.getElementById("sidebar-toggle-triangle");
+      const resizer = document.getElementById("resizer-sidebar");
+      
+      const isCurrentlyOpen = !mainLayout.classList.contains("sidebar-collapsed");
+      const willOpen = (typeof forceOpen === "boolean") ? forceOpen : !isCurrentlyOpen;
+
+      mainLayout.classList.toggle("sidebar-collapsed", !willOpen);
+      if (triangleIcon) triangleIcon.innerText = willOpen ? "◀" : "▶";
+      if (toggleBtn) toggleBtn.title = willOpen ? "收起侧边栏" : "展开侧边栏";
+      if (resizer) resizer.style.display = willOpen ? "block" : "none";
+
+      localStorage.setItem("wiki_sidebar_collapsed", willOpen ? "0" : "1");
+      
+      setTimeout(() => {
+        if (mindmapChart) mindmapChart.resize();
+      }, 250);
+    }
+
+    // ==========================================================================
+    // 拖拽调整各部分宽度 (Draggable Resizers)
+    // ==========================================================================
+    function initResizers() {
+      // 1. 侧边栏调宽
+      const sidebarResizer = document.getElementById("resizer-sidebar");
+      const sidebar = document.getElementById("sidebar-tree");
+      if (sidebarResizer && sidebar) {
+        makeHorizontalResizer(sidebarResizer, (deltaX, startWidth) => {
+          let newW = startWidth + deltaX;
+          if (newW < 180) newW = 180;
+          if (newW > 550) newW = 550;
+          document.documentElement.style.setProperty("--sidebar-width", newW + "px");
+          localStorage.setItem("wiki_sidebar_width", newW);
+          if (mindmapChart) mindmapChart.resize();
+        }, () => sidebar.offsetWidth);
+      }
+
+      // 2. 编辑器左右分栏比例调宽
+      const editorResizer = document.getElementById("resizer-editor");
+      const codePane = document.getElementById("editor-pane-code");
+      if (editorResizer && codePane) {
+        makeHorizontalResizer(editorResizer, (deltaX, startWidth) => {
+          let newW = startWidth + deltaX;
+          if (newW < 220) newW = 220;
+          const containerW = codePane.parentElement.offsetWidth;
+          if (newW > containerW - 220) newW = containerW - 220;
+          codePane.style.flex = "none";
+          codePane.style.width = newW + "px";
+        }, () => codePane.offsetWidth);
+      }
+
+      // 3. AI 助手抽屉调宽
+      const aiResizer = document.getElementById("resizer-ai");
+      const aiDrawer = document.getElementById("ai-drawer");
+      if (aiResizer && aiDrawer) {
+        makeHorizontalResizer(aiResizer, (deltaX, startWidth) => {
+          let newW = startWidth - deltaX;
+          if (newW < 300) newW = 300;
+          if (newW > 750) newW = 750;
+          document.documentElement.style.setProperty("--ai-drawer-width", newW + "px");
+          localStorage.setItem("wiki_ai_drawer_width", newW);
+          if (mindmapChart) mindmapChart.resize();
+        }, () => aiDrawer.offsetWidth);
+      }
+    }
+
+    function makeHorizontalResizer(resizerEl, onResize, getStartWidth) {
+      resizerEl.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const mainLayout = document.getElementById("wiki-main-layout");
+        if (mainLayout) mainLayout.classList.add("is-resizing");
+        const startX = e.clientX;
+        const startW = getStartWidth();
+        resizerEl.classList.add("is-dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
+        function onMouseMove(ev) {
+          const deltaX = ev.clientX - startX;
+          onResize(deltaX, startW);
+        }
+
+        function onMouseUp() {
+          resizerEl.classList.remove("is-dragging");
+          if (mainLayout) mainLayout.classList.remove("is-resizing");
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+          window.removeEventListener("mousemove", onMouseMove);
+          window.removeEventListener("mouseup", onMouseUp);
+        }
+
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+      });
+    }
+
+    // ==========================================================================
+    // 图表放大灯箱控制器 (Diagram Lightbox Controller)
+    // ==========================================================================
+    let lightboxWasDragged = false;
+
+    function openDiagramLightbox(triggerElement) {
+      const lightbox = document.getElementById("diagram-lightbox");
+      const wrapper = document.getElementById("lightbox-content-wrapper");
+      wrapper.innerHTML = "";
+
+      if (triggerElement.tagName === "IMG") {
+        const card = document.createElement("div");
+        card.className = "lightbox-svg-card";
+        card.id = "lightbox-svg-card";
+
+        const clonedImg = triggerElement.cloneNode(true);
+        clonedImg.removeAttribute("style");
+        clonedImg.style.display = "block";
+        clonedImg.style.maxWidth = "none";
+        clonedImg.style.maxHeight = "none";
+
+        card.appendChild(clonedImg);
+        wrapper.appendChild(card);
+        lightbox.style.display = "flex";
+        setTimeout(() => fitLightboxZoom(), 30);
+        return;
+      }
+
+      const container = triggerElement.closest(".mermaid-container") || triggerElement;
+      const svg = container.querySelector ? container.querySelector("svg") : null;
+      if (!svg) return;
+
+      // 1. 获取 SVG 的天然原始物理像素尺寸 (优先从 viewBox 解析，其次从 style / clientRect 解析)
+      let naturalWidth = 0;
+      let naturalHeight = 0;
+
+      const vb = svg.getAttribute("viewBox");
+      if (vb) {
+        const parts = vb.trim().split(/[\s,]+/);
+        if (parts.length >= 4) {
+          naturalWidth = parseFloat(parts[2]);
+          naturalHeight = parseFloat(parts[3]);
+        }
+      }
+
+      if (!naturalWidth || !naturalHeight) {
+        const maxW = svg.style.maxWidth;
+        if (maxW && maxW.includes("px")) {
+          naturalWidth = parseFloat(maxW);
+        }
+        const attrW = svg.getAttribute("width");
+        const attrH = svg.getAttribute("height");
+        if (attrW && !attrW.includes("%")) naturalWidth = parseFloat(attrW);
+        if (attrH && !attrH.includes("%")) naturalHeight = parseFloat(attrH);
+      }
+
+      if (!naturalWidth || !naturalHeight) {
+        const rect = svg.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          naturalWidth = rect.width;
+          naturalHeight = rect.height;
+        }
+      }
+
+      // 保底尺寸防止异常
+      if (!naturalWidth || naturalWidth < 50) naturalWidth = 1000;
+      if (!naturalHeight || naturalHeight < 50) naturalHeight = 750;
+
+      // 2. 深度克隆矢量图，赋予显式天然宽高，彻底杜绝 0 宽塌陷
+      const clonedSvg = svg.cloneNode(true);
+      clonedSvg.removeAttribute("style");
+      clonedSvg.setAttribute("width", naturalWidth);
+      clonedSvg.setAttribute("height", naturalHeight);
+      clonedSvg.style.width = naturalWidth + "px";
+      clonedSvg.style.height = naturalHeight + "px";
+      clonedSvg.style.maxWidth = "none";
+      clonedSvg.style.maxHeight = "none";
+      clonedSvg.style.display = "block";
+
+      // 3. 用白色白底卡片容器包裹，保证高亮且不破坏内部矢量排版
+      const card = document.createElement("div");
+      card.className = "lightbox-svg-card";
+      card.id = "lightbox-svg-card";
+      card.dataset.naturalWidth = naturalWidth;
+      card.dataset.naturalHeight = naturalHeight;
+      card.appendChild(clonedSvg);
+      wrapper.appendChild(card);
+
+      lightbox.style.display = "flex";
+      setTimeout(() => fitLightboxZoom(), 30);
+    }
+
+    function closeDiagramLightbox() {
+      const lightbox = document.getElementById("diagram-lightbox");
+      if (lightbox) lightbox.style.display = "none";
+    }
+
+    function updateLightboxTransform(disableTransition = false) {
+      const wrapper = document.getElementById("lightbox-content-wrapper");
+      if (wrapper) {
+        wrapper.style.transition = disableTransition ? "none" : "transform 0.12s cubic-bezier(0.2, 0, 0, 1)";
+        wrapper.style.transform = `translate(${lightboxPanX}px, ${lightboxPanY}px) scale(${currentLightboxScale})`;
+      }
+      const badge = document.getElementById("lightbox-zoom-level");
+      if (badge) badge.innerText = `${Math.round(currentLightboxScale * 100)}%`;
+    }
+
+    function zoomLightbox(delta, isMultiplicative = false) {
+      if (isMultiplicative) {
+        currentLightboxScale = Math.min(Math.max(0.15, currentLightboxScale * delta), 6.0);
+      } else {
+        currentLightboxScale = Math.min(Math.max(0.15, currentLightboxScale + delta), 6.0);
+      }
+      updateLightboxTransform(false);
+    }
+
+    function resetLightboxZoom() {
+      currentLightboxScale = 1.0;
+      lightboxPanX = 0;
+      lightboxPanY = 0;
+      updateLightboxTransform(false);
+    }
+
+    function fitLightboxZoom() {
+      const canvas = document.getElementById("lightbox-canvas");
+      const card = document.getElementById("lightbox-svg-card");
+      if (!canvas || !card) return;
+
+      lightboxPanX = 0;
+      lightboxPanY = 0;
+
+      let origW = parseFloat(card.dataset.naturalWidth);
+      let origH = parseFloat(card.dataset.naturalHeight);
+
+      if (!origW || !origH) {
+        const targetSvg = card.querySelector("svg");
+        const targetImg = card.querySelector("img");
+        if (targetSvg) {
+          origW = parseFloat(targetSvg.getAttribute("width")) || parseFloat(targetSvg.style.width) || 1000;
+          origH = parseFloat(targetSvg.getAttribute("height")) || parseFloat(targetSvg.style.height) || 750;
+        } else if (targetImg) {
+          origW = targetImg.naturalWidth || targetImg.clientWidth || 1000;
+          origH = targetImg.naturalHeight || targetImg.clientHeight || 750;
+        }
+      }
+
+      // 考虑卡片自身的内边距 (padding 24*2 = 48)
+      const totalW = origW + 48;
+      const totalH = origH + 48;
+
+      const availW = canvas.clientWidth - 80;
+      const availH = canvas.clientHeight - 80;
+
+      if (totalW > 0 && totalH > 0 && availW > 0 && availH > 0) {
+        let s = Math.min(availW / totalW, availH / totalH);
+        if (s > 1.25) s = 1.25;
+        if (s < 0.2) s = 0.2;
+        currentLightboxScale = Math.round(s * 100) / 100;
+      } else {
+        currentLightboxScale = 1.0;
+      }
+
+      updateLightboxTransform(false);
+    }
+
+    function handleLightboxWheel(e) {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+      zoomLightbox(factor, true);
+    }
+
+    function initLightboxEvents() {
+      const canvas = document.getElementById("lightbox-canvas");
+      if (!canvas) return;
+
+      canvas.onmousedown = (e) => {
+        if (e.target.closest(".lightbox-actions") || e.target.closest(".lightbox-header")) return;
+        isPanningLightbox = true;
+        lightboxWasDragged = false;
+        startPanX = e.clientX - lightboxPanX;
+        startPanY = e.clientY - lightboxPanY;
+      };
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isPanningLightbox) return;
+        if (Math.abs(e.clientX - (startPanX + lightboxPanX)) > 3 || Math.abs(e.clientY - (startPanY + lightboxPanY)) > 3) {
+          lightboxWasDragged = true;
+        }
+        lightboxPanX = e.clientX - startPanX;
+        lightboxPanY = e.clientY - startPanY;
+        updateLightboxTransform(true);
+      });
+
+      window.addEventListener("mouseup", () => {
+        isPanningLightbox = false;
+      });
+
+      canvas.onclick = (e) => {
+        if (!lightboxWasDragged && (e.target === canvas || e.target.id === "lightbox-content-wrapper")) {
+          closeDiagramLightbox();
+        }
+      };
+
+      canvas.ondblclick = (e) => {
+        if (e.target.closest(".lightbox-header")) return;
+        fitLightboxZoom();
+      };
+    }
+
+    // 加载目录元数据
+    async function loadCatalog() {
+      try {
+        const res = await fetch("/api/wiki/catalog");
+        if (res.ok) {
+          wikiCatalog = await res.json();
+          if (wikiCatalog && wikiCatalog.system_title) {
+            const titleEl = document.getElementById("app-title");
+            if (titleEl) titleEl.innerText = wikiCatalog.system_title;
+          }
+        }
+      } catch (err) {
+        console.warn("无法从 API 读取目录，尝试本地兜底:", err);
+      }
+      
+      if (!wikiCatalog || !wikiCatalog.modules) {
+        wikiCatalog = {
+          system_title: "智能分析系统技术文档",
+          modules: [
+            { id: "01_system_architecture", number: "01", title: "系统全景架构与工程规范", badge: "基础骨架" },
+            { id: "02_data_sources_and_er", number: "02", title: "全流程数据源与实体关系拓扑", badge: "数据底座" },
+            { id: "03_etl_pipeline_and_engine", number: "03", title: "ETL 流式清洗管线与 DuckDB 内存引擎", badge: "管道存储" },
+            { id: "04_metrics_and_standard_cpk", number: "04", title: "17项质检指标统一定义与标准 CPK 引擎", badge: "指标标准" },
+            { id: "05_core_algorithms_deepdive", number: "05", title: "核心归因算法与 CGRS 控制变量模型", badge: "算法中枢" },
+            { id: "06_frontend_dashboard_views", number: "06", title: "前端看板交互与组件状态流转", badge: "前端交互" },
+            { id: "07_devops_and_troubleshooting", number: "07", title: "系统运维部署、排错手册与红线守则", badge: "运维守则" }
+          ]
+        };
+      }
+    }
+
+    // 渲染左侧边栏模块列表
+    function renderSidebarModules() {
+      const container = document.getElementById("module-list");
+      container.innerHTML = "";
+      
+      wikiCatalog.modules.forEach(m => {
+        const card = document.createElement("div");
+        card.className = `module-card ${m.id === currentDocId ? 'is-active' : ''}`;
+        card.id = `mod-card-${m.id}`;
+        card.onclick = () => selectDoc(m.id);
+
+        card.innerHTML = `
+          <div class="module-header-row">
+            <span class="module-number">${m.number}</span>
+            <div class="module-info">
+              <div class="module-title-row">
+                <span class="module-title">${m.number}. ${m.title}</span>
+                <span class="module-badge">${m.badge || ''}</span>
+              </div>
+            </div>
+          </div>
+          <div class="module-sections" id="mod-sections-${m.id}"></div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 切换视图模式
+    function switchViewMode(mode) {
+      currentViewMode = mode;
+      
+      document.getElementById("tab-mindmap").classList.toggle("is-active", mode === "mindmap");
+      document.getElementById("tab-doc").classList.toggle("is-active", mode === "doc");
+      document.getElementById("tab-editor").classList.toggle("is-active", mode === "editor");
+
+      document.getElementById("mindmap-container").classList.toggle("is-active", mode === "mindmap");
+      document.getElementById("article-container").classList.toggle("is-active", mode === "doc");
+      document.getElementById("editor-container").classList.toggle("is-active", mode === "editor");
+
+      const hlToolbar = document.getElementById("highlight-toolbar");
+      if (hlToolbar) hlToolbar.style.display = "none";
+
+      if (mode === "mindmap" && mindmapChart) {
+        setTimeout(() => mindmapChart.resize(), 100);
+      }
+      if (mode === "editor") {
+        document.getElementById("editor-textarea").value = currentDocContent;
+        handleEditorInput();
+      }
+    }
+
+    // 加载文档 (自动渲染正文，并将大纲与源码无缝构建至左侧目录模块内)
+    async function loadDoc(docId, autoSwitchToDoc = true) {
+      currentDocId = docId;
+      updateAiContextLabel();
+      
+      // 更新左侧卡片高亮，并清空其他非激活模块的内部大纲
+      document.querySelectorAll(".module-card").forEach(c => c.classList.remove("is-active"));
+      const activeCard = document.getElementById(`mod-card-${docId}`);
+      if (activeCard) activeCard.classList.add("is-active");
+
+      document.querySelectorAll(".module-sections").forEach(sec => {
+        if (sec.id !== `mod-sections-${docId}`) {
+          sec.innerHTML = "";
+        }
+      });
+
+      try {
+        const res = await fetch(`/api/wiki/doc/${docId}`);
+        if (res.ok) {
+          const data = await res.json();
+          currentDocContent = data.content;
+          document.getElementById("current-doc-mtime").innerText = `修改于: ${data.modified_time || '刚刚'}`;
+        } else {
+          currentDocContent = `# ${docId}\n\n正在加载中...`;
+        }
+      } catch (err) {
+        currentDocContent = `# ${docId}\n\n本地缓存模式已就绪`;
+      }
+
+      // 渲染 Markdown 并构建左侧集成大纲与源码直达
+      await renderMarkdown(currentDocContent, "markdown-viewer");
+      buildTOC("markdown-viewer");
+
+      if (autoSwitchToDoc) {
+        switchViewMode("doc");
+        document.getElementById("content-area").scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+
+    function selectDoc(docId) {
+      loadDoc(docId, true);
+    }
+
+    // 渲染 Markdown 并执行 KaTeX & Mermaid (防御性安全渲染并注入放大功能)
+    async function renderMarkdown(mdText, targetDomId) {
+      const dom = document.getElementById(targetDomId);
+      if (!dom) return;
+
+      const processedText = preprocessMarkdown(mdText);
+      dom.innerHTML = marked.parse(processedText);
+
+      // 拦截页面内超链接支持相互跳转
+      dom.querySelectorAll("a").forEach(a => {
+        const href = a.getAttribute("href");
+        if (href && (href.endsWith(".md") || href.includes("#"))) {
+          a.onclick = (e) => {
+            e.preventDefault();
+            handleInternalLink(href);
+          };
+        }
+      });
+
+      // 渲染数学公式 KaTeX
+      if (window.renderMathInElement) {
+        try {
+          renderMathInElement(dom, {
+            delimiters: [
+              {left: '$$', right: '$$', display: true},
+              {left: '$', right: '$', display: false}
+            ],
+            throwOnError: false
+          });
+        } catch (e) {
+          console.warn("KaTeX render error:", e);
+        }
+      }
+
+      // 渲染 Mermaid 拓扑图 (安全防崩溃渲染 + 注入放大查看按钮)
+      if (window.mermaid) {
+        const codeBlocks = Array.from(dom.querySelectorAll("pre code.language-mermaid"));
+        for (let i = 0; i < codeBlocks.length; i++) {
+          const codeEl = codeBlocks[i];
+          const pre = codeEl.parentElement;
+          const rawCode = codeEl.textContent.trim();
+          const chartId = `mermaid_diag_${Date.now()}_${i}`;
+
+          try {
+            const renderResult = await mermaid.render(chartId, rawCode);
+            const container = document.createElement("div");
+            container.className = "mermaid-container";
+            container.title = "点击放大全屏查看";
+            container.innerHTML = `
+              <div class="diagram-actions">
+                <button class="diagram-zoom-btn" onclick="openDiagramLightbox(this)" title="全屏放大查看拓扑图">放大查看</button>
+              </div>
+              ${renderResult.svg}
+            `;
+
+            // 点击图表主体自动触发全屏放大
+            container.onclick = (e) => {
+              if (!e.target.closest("a") && !e.target.closest("button")) {
+                openDiagramLightbox(container);
+              }
+            };
+
+            pre.parentNode.replaceChild(container, pre);
+          } catch (mErr) {
+            console.warn("Mermaid parsing issue:", mErr);
+            const container = document.createElement("div");
+            container.className = "mermaid-fallback";
+            container.innerHTML = `<div class="mermaid-fallback-header">拓扑架构图</div><pre class="mermaid-code"><code>${escapeHtml(rawCode)}</code></pre>`;
+            pre.parentNode.replaceChild(container, pre);
+
+            const errSvg = document.getElementById("d" + chartId) || document.getElementById(chartId);
+            if (errSvg) errSvg.remove();
+          }
+        }
+      }
+
+      // 支持正文中普通图片点击放大查看
+      dom.querySelectorAll("img").forEach(img => {
+        img.style.cursor = "zoom-in";
+        img.title = "点击放大全屏查看";
+        img.onclick = () => openDiagramLightbox(img);
+      });
+    }
+
+    // 页面内相互跳转处理
+    function handleInternalLink(href) {
+      let targetDoc = currentDocId;
+      let targetAnchor = "";
+
+      if (href.includes("#")) {
+        const parts = href.split("#");
+        if (parts[0]) targetDoc = parts[0].replace(".md", "");
+        targetAnchor = parts[1];
+      } else {
+        targetDoc = href.replace(".md", "");
+      }
+
+      if (targetDoc !== currentDocId) {
+        loadDoc(targetDoc, true).then(() => {
+          if (targetAnchor) scrollAnchor(targetAnchor);
+        });
+      } else if (targetAnchor) {
+        scrollAnchor(targetAnchor);
+      }
+    }
+
+    function jumpToSection(docId, anchor) {
+      if (docId !== currentDocId) {
+        loadDoc(docId, true).then(() => scrollAnchor(anchor));
+      } else {
+        switchViewMode("doc");
+        scrollAnchor(anchor);
+      }
+    }
+
+    function scrollAnchor(anchor) {
+      setTimeout(() => {
+        const el = document.getElementById(anchor) || document.querySelector(`[id*="${anchor}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          el.style.transition = "background 0.5s ease";
+          el.style.background = "rgba(86, 69, 212, 0.12)";
+          setTimeout(() => el.style.background = "transparent", 1500);
+        }
+      }, 150);
+    }
+
+    // 生成当前章节目录大纲 TOC 与源码直达 (完全整合至左侧激活目录卡片内部)
+    function buildTOC(sourceDomId) {
+      const container = document.getElementById(`mod-sections-${currentDocId}`);
+      if (!container) return;
+      container.innerHTML = "";
+
+      const source = document.getElementById(sourceDomId);
+      if (!source) return;
+      const headings = source.querySelectorAll("h2, h3");
+
+      // 1. 本章导读大纲
+      if (headings.length > 0) {
+        const tocBox = document.createElement("div");
+        tocBox.className = "sidebar-toc-box";
+        
+        const tocHeader = document.createElement("div");
+        tocHeader.className = "sidebar-section-title";
+        tocHeader.innerText = "导读大纲 (TOC)";
+        tocBox.appendChild(tocHeader);
+
+        const tocList = document.createElement("div");
+        tocList.className = "sidebar-toc-list";
+
+        headings.forEach((h, idx) => {
+          const text = h.innerText.trim();
+          const id = h.id || `heading-${idx}`;
+          h.id = id;
+
+          const isH3 = (h.tagName.toLowerCase() === "h3");
+          const a = document.createElement("a");
+          a.id = `sidebar-toc-link-${id}`;
+          a.href = `#${id}`;
+          a.className = `sidebar-toc-link ${isH3 ? 'depth-3' : 'depth-2'}`;
+          a.title = text;
+          a.innerHTML = `<span class="sidebar-toc-indicator"></span><span class="sidebar-toc-text">${escapeHtml(text)}</span>`;
+          a.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleTocClick(id);
+          };
+          tocList.appendChild(a);
+        });
+
+        tocBox.appendChild(tocList);
+        container.appendChild(tocBox);
+      }
+
+      // 2. 对应源码直达映射 (整合在大纲下方)
+      const files = SOURCE_FILE_MAP[currentDocId] || [];
+      if (files.length > 0) {
+        const srcBox = document.createElement("div");
+        srcBox.className = "sidebar-source-box";
+        
+        const srcHeader = document.createElement("div");
+        srcHeader.className = "sidebar-section-title";
+        srcHeader.innerText = "对应源码映射";
+        srcBox.appendChild(srcHeader);
+
+        const srcList = document.createElement("div");
+        srcList.className = "source-files-list";
+
+        files.forEach(f => {
+          const ext = f.split('.').pop().toLowerCase();
+          let badgeClass = "badge-py";
+          let badgeLabel = ext.toUpperCase();
+          if (ext === "py") { badgeClass = "badge-py"; badgeLabel = "PY"; }
+          else if (ext === "vue") { badgeClass = "badge-vue"; badgeLabel = "VUE"; }
+          else if (ext === "js") { badgeClass = "badge-js"; badgeLabel = "JS"; }
+          else if (ext === "json") { badgeClass = "badge-js"; badgeLabel = "JSON"; }
+          else if (ext === "bat") { badgeClass = "badge-bat"; badgeLabel = "BAT"; }
+
+          const lastSlash = f.lastIndexOf('/');
+          const dir = lastSlash >= 0 ? f.substring(0, lastSlash + 1) : "";
+          const fileName = lastSlash >= 0 ? f.substring(lastSlash + 1) : f;
+
+          const item = document.createElement("div");
+          item.className = "source-file-item";
+          item.title = `点击复制路径: ${f}`;
+          item.onclick = (e) => {
+            e.stopPropagation();
+            copyFilePath(f);
+          };
+          item.innerHTML = `
+            <span class="source-file-badge ${badgeClass}">${badgeLabel}</span>
+            <span class="source-file-path"><span style="color: var(--text-dim);">${escapeHtml(dir)}</span><span class="file-name">${escapeHtml(fileName)}</span></span>
+            <span class="source-file-action">复制</span>
+          `;
+          srcList.appendChild(item);
+        });
+
+        srcBox.appendChild(srcList);
+        container.appendChild(srcBox);
+      }
+
+      setTimeout(() => updateActiveTocHeading(), 80);
+    }
+
+    function handleTocClick(anchorId) {
+      document.querySelectorAll(".sidebar-toc-link").forEach(l => l.classList.remove("is-active"));
+      const targetLink = document.getElementById(`sidebar-toc-link-${anchorId}`);
+      if (targetLink) targetLink.classList.add("is-active");
+
+      scrollAnchor(anchorId);
+    }
+
+    // 滚动监听自动高亮当前章节大纲 (Scrollspy)
+    function initTocScrollspy() {
+      const contentArea = document.getElementById("content-area");
+      if (!contentArea) return;
+
+      let scrollTimer = null;
+      contentArea.addEventListener("scroll", () => {
+        if (currentViewMode !== "doc") return;
+        if (scrollTimer) return;
+        scrollTimer = setTimeout(() => {
+          scrollTimer = null;
+          updateActiveTocHeading();
+        }, 60);
+      }, { passive: true });
+    }
+
+    function updateActiveTocHeading() {
+      const contentArea = document.getElementById("content-area");
+      const headings = document.querySelectorAll("#markdown-viewer h2, #markdown-viewer h3");
+      if (!headings.length || !contentArea) return;
+
+      const areaRect = contentArea.getBoundingClientRect();
+      let activeHeadingId = null;
+
+      for (let i = 0; i < headings.length; i++) {
+        const rect = headings[i].getBoundingClientRect();
+        const relTop = rect.top - areaRect.top;
+        if (relTop <= 140) {
+          activeHeadingId = headings[i].id;
+        } else {
+          break;
+        }
+      }
+
+      if (!activeHeadingId && headings.length > 0) {
+        activeHeadingId = headings[0].id;
+      }
+
+      if (activeHeadingId) {
+        document.querySelectorAll(".sidebar-toc-link").forEach(l => l.classList.remove("is-active"));
+        const activeLink = document.getElementById(`sidebar-toc-link-${activeHeadingId}`);
+        if (activeLink) {
+          activeLink.classList.add("is-active");
+          const sidebarTree = document.getElementById("sidebar-tree");
+          if (sidebarTree) {
+            const linkRect = activeLink.getBoundingClientRect();
+            const treeRect = sidebarTree.getBoundingClientRect();
+            if (linkRect.top < treeRect.top + 30 || linkRect.bottom > treeRect.bottom - 30) {
+              activeLink.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            }
+          }
+        }
+      }
+    }
+
+    // 兼顾独立调用源码映射卡片刷新
+    function renderSourceFiles(docId) {
+      // 源码映射已统一整合在 buildTOC 中
+    }
+
+    function copyFilePath(path) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(path).then(() => {
+          showToast(`已复制源码路径: ${path}`, "#1aae39");
+        }).catch(() => fallbackCopy(path));
+      } else {
+        fallbackCopy(path);
+      }
+    }
+
+    function fallbackCopy(path) {
+      const input = document.createElement("input");
+      input.value = path;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+      showToast(`已复制源码路径: ${path}`, "#1aae39");
+    }
+
+    // 编辑器输入同步预览
+    function handleEditorInput() {
+      const val = document.getElementById("editor-textarea").value;
+      renderMarkdown(val, "editor-preview");
+    }
+
+    // 在编辑器中插入高亮标记
+    function insertHighlightTag(color) {
+      const textarea = document.getElementById("editor-textarea");
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selectedText = textarea.value.substring(start, end) || "高亮重点文字";
+      const before = textarea.value.substring(0, start);
+      const after = textarea.value.substring(end);
+
+      const tag = `<mark class="hl-${color}">${selectedText}</mark>`;
+      textarea.value = before + tag + after;
+      textarea.selectionStart = start + tag.length;
+      textarea.selectionEnd = start + tag.length;
+      textarea.focus();
+      handleEditorInput();
+      showToast(`已插入高亮标记，记得点击保存回写磁盘`, "#1aae39");
+    }
+
+    // ==========================================================================
+    // 划词高亮系统 (Interactive Text Selection Highlighter)
+    // ==========================================================================
+    function initTextHighlighter() {
+      const viewer = document.getElementById("markdown-viewer");
+      const toolbar = document.getElementById("highlight-toolbar");
+      const contentArea = document.getElementById("content-area");
+      if (!viewer || !toolbar || !contentArea) return;
+
+      viewer.addEventListener("mouseup", (e) => {
+        if (currentViewMode !== "doc") return;
+
+        setTimeout(() => {
+          const selection = window.getSelection();
+          const selectedText = selection.toString().trim();
+
+          if (selectedText.length > 0) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const areaRect = contentArea.getBoundingClientRect();
+
+            let top = rect.top - areaRect.top + contentArea.scrollTop - 44;
+            let left = rect.left - areaRect.left + (rect.width / 2) - 140;
+
+            if (left < 20) left = 20;
+            if (top < 10) top = rect.bottom - areaRect.top + contentArea.scrollTop + 8;
+
+            toolbar.style.top = `${top}px`;
+            toolbar.style.left = `${left}px`;
+            toolbar.style.display = "flex";
+
+            window._selectedRawText = selectedText;
+          } else {
+            toolbar.style.display = "none";
+          }
+        }, 10);
+      });
+
+      document.addEventListener("mousedown", (e) => {
+        if (!toolbar.contains(e.target) && !viewer.contains(e.target)) {
+          toolbar.style.display = "none";
+        }
+      });
+    }
+
+    function applyHighlight(color) {
+      const toolbar = document.getElementById("highlight-toolbar");
+      const text = window._selectedRawText;
+      if (!text) {
+        if (toolbar) toolbar.style.display = "none";
+        return;
+      }
+
+      if (color === "clear") {
+        const regex = new RegExp(`<mark class="[^"]*">${escapeRegExp(text)}<\\/mark>|<mark>${escapeRegExp(text)}<\\/mark>|==${escapeRegExp(text)}==`, 'g');
+        currentDocContent = currentDocContent.replace(regex, text);
+        showToast("已清除选中文本的高亮，点击右上角保存可永久生效", "#475569");
+      } else {
+        const markedTag = `<mark class="hl-${color}">${text}</mark>`;
+        if (currentDocContent.includes(text)) {
+          currentDocContent = currentDocContent.replace(text, markedTag);
+          showToast(`已添加高亮标记，点击右上角"保存到本地"即可永久持久化`, "#1aae39");
+        } else {
+          showToast("未能精确定位源文本，请在编辑器中核验", "#d97706");
+        }
+      }
+
+      const scrollPos = document.getElementById("content-area").scrollTop;
+      renderMarkdown(currentDocContent, "markdown-viewer").then(() => {
+        document.getElementById("content-area").scrollTop = scrollPos;
+      });
+
+      if (toolbar) toolbar.style.display = "none";
+      window.getSelection().removeAllRanges();
+    }
+
+    function toggleHighlightTip() {
+      showToast("划词高亮指南：用鼠标直接在正文中划选文字，即会弹出高亮工具条，支持多种颜色与清除", "#5645d4");
+    }
+
+    // 保存当前文档回写本地磁盘
+    async function saveCurrentDocToDisk() {
+      const textarea = document.getElementById("editor-textarea");
+      const content = (currentViewMode === "editor") ? textarea.value : currentDocContent;
+
+      showToast("正在持久化写入本地磁盘...", "#5645d4");
+      try {
+        const res = await fetch(`/api/wiki/doc/${currentDocId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: content })
+        });
+        if (res.ok) {
+          currentDocContent = content;
+          renderMarkdown(currentDocContent, "markdown-viewer");
+          showToast(`保存成功：已持久化同步至 docs/wiki/${currentDocId}.md`, "#1aae39");
+        } else {
+          showToast("本地文件已暂存 (后端暂未联机)", "#d97706");
+        }
+      } catch (err) {
+        localStorage.setItem(`wiki_${currentDocId}`, content);
+        showToast("本地缓存已更新 (LocalStorage)", "#d97706");
+      }
+    }
+
+    // ==========================================================================
+    // AI 技术问答助手 (随时调用对话系统与可拖动悬浮球)
+    // ==========================================================================
+    function initAiFloatingBall() {
+      const ball = document.getElementById("ai-floating-ball");
+      if (!ball) return;
+
+      // 恢复上次用户放置的悬浮位置
+      try {
+        const saved = localStorage.getItem("wiki_ai_ball_pos");
+        if (saved) {
+          const { left, top } = JSON.parse(saved);
+          const ballW = ball.offsetWidth || 52;
+          const ballH = ball.offsetHeight || 52;
+          const maxL = window.innerWidth - ballW - 12;
+          const maxT = window.innerHeight - ballH - 12;
+          const clampL = Math.max(10, Math.min(left, maxL));
+          const clampT = Math.max(10, Math.min(top, maxT));
+          ball.style.left = clampL + "px";
+          ball.style.top = clampT + "px";
+          ball.style.right = "auto";
+          ball.style.bottom = "auto";
+        }
+      } catch (e) {}
+
+      let isDragging = false;
+      let hasMoved = false;
+      let startX = 0, startY = 0;
+      let initLeft = 0, initTop = 0;
+
+      function startDrag(clientX, clientY) {
+        isDragging = true;
+        hasMoved = false;
+        startX = clientX;
+        startY = clientY;
+        const rect = ball.getBoundingClientRect();
+        initLeft = rect.left;
+        initTop = rect.top;
+      }
+
+      function moveDrag(clientX, clientY) {
+        if (!isDragging) return;
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+
+        if (!hasMoved && Math.hypot(dx, dy) > 4) {
+          hasMoved = true;
+          ball.classList.add("is-dragging");
+        }
+
+        if (hasMoved) {
+          const ballW = ball.offsetWidth || 52;
+          const ballH = ball.offsetHeight || 52;
+          const maxL = window.innerWidth - ballW - 10;
+          const maxT = window.innerHeight - ballH - 10;
+          const newL = Math.max(10, Math.min(initLeft + dx, maxL));
+          const newT = Math.max(10, Math.min(initTop + dy, maxT));
+          ball.style.left = newL + "px";
+          ball.style.top = newT + "px";
+          ball.style.right = "auto";
+          ball.style.bottom = "auto";
+        }
+      }
+
+      function endDrag() {
+        if (!isDragging) return;
+        isDragging = false;
+        ball.classList.remove("is-dragging");
+
+        if (hasMoved) {
+          const rect = ball.getBoundingClientRect();
+          try {
+            localStorage.setItem("wiki_ai_ball_pos", JSON.stringify({ left: rect.left, top: rect.top }));
+          } catch (e) {}
+        } else {
+          // 纯点击触发侧边抽屉开关
+          toggleAiDrawer();
+        }
+      }
+
+      // 鼠标拖拽支持
+      ball.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        startDrag(e.clientX, e.clientY);
+
+        const onMouseMove = (ev) => moveDrag(ev.clientX, ev.clientY);
+        const onMouseUp = () => {
+          window.removeEventListener("mousemove", onMouseMove);
+          window.removeEventListener("mouseup", onMouseUp);
+          endDrag();
+        };
+
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+      });
+
+      // 触屏拖拽支持
+      ball.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) return;
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: true });
+
+      ball.addEventListener("touchmove", (e) => {
+        if (!isDragging || e.touches.length !== 1) return;
+        moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+        if (hasMoved && e.cancelable) e.preventDefault();
+      }, { passive: false });
+
+      ball.addEventListener("touchend", () => {
+        endDrag();
+      });
+
+      // 窗口尺寸变化时防止悬浮球超出边界
+      window.addEventListener("resize", () => {
+        if (ball.style.left && ball.style.left !== "auto") {
+          const rect = ball.getBoundingClientRect();
+          const ballW = ball.offsetWidth || 52;
+          const ballH = ball.offsetHeight || 52;
+          const maxL = window.innerWidth - ballW - 10;
+          const maxT = window.innerHeight - ballH - 10;
+          const clampL = Math.max(10, Math.min(rect.left, maxL));
+          const clampT = Math.max(10, Math.min(rect.top, maxT));
+          ball.style.left = clampL + "px";
+          ball.style.top = clampT + "px";
+        }
+      });
+    }
+
+    function toggleAiDrawer(forceState) {
+      const drawer = document.getElementById("ai-drawer");
+      const resizer = document.getElementById("resizer-ai");
+      const ball = document.getElementById("ai-floating-ball");
+      
+      const isOpen = drawer.classList.contains("is-open");
+      const willOpen = (typeof forceState === "boolean") ? forceState : !isOpen;
+
+      drawer.classList.toggle("is-open", willOpen);
+      if (resizer) resizer.style.display = willOpen ? "block" : "none";
+      if (ball) ball.classList.toggle("is-active", willOpen);
+
+      if (willOpen) {
+        updateAiContextLabel();
+        setTimeout(() => {
+          document.getElementById("ai-user-input").focus();
+        }, 100);
+      }
+
+      setTimeout(() => {
+        if (mindmapChart) mindmapChart.resize();
+      }, 220);
+    }
+
+    function updateAiContextLabel() {
+      const label = document.getElementById("ai-current-doc-label");
+      if (label) {
+        const mod = (wikiCatalog && wikiCatalog.modules) ? wikiCatalog.modules.find(m => m.id === currentDocId) : null;
+        label.innerText = mod ? `${mod.number}. ${mod.title}` : currentDocId;
+      }
+    }
+
+    async function loadAiConfigIndicator() {
+      try {
+        const res = await fetch("/api/wiki/ai-config");
+        if (res.ok) {
+          const cfg = await res.json();
+          const indicator = document.getElementById("ai-provider-indicator");
+          if (indicator) {
+            if (cfg.provider === "builtin" || !cfg.has_key) {
+              indicator.innerText = "内置工业知识库 (即时回答)";
+            } else {
+              indicator.innerText = `模型连接: ${cfg.model || cfg.provider}`;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    function clearAiChatHistory() {
+      aiChatHistory = [];
+      const list = document.getElementById("ai-messages-list");
+      list.innerHTML = `
+        <div class="ai-msg ai-msg-assistant">
+          <p>已重置上下文。您可以随时向我提问关于 17项指标、公式推导、CGRS逻辑或排错方案！</p>
+        </div>
+      `;
+      showToast("对话历史已重置", "#5645d4");
+    }
+
+    function sendQuickPrompt(promptText) {
+      document.getElementById("ai-user-input").value = promptText;
+      sendAiMessage();
+    }
+
+    function handleAiInputKeydown(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendAiMessage();
+      }
+    }
+
+    async function sendAiMessage() {
+      const textarea = document.getElementById("ai-user-input");
+      const msg = textarea.value.trim();
+      if (!msg) return;
+
+      appendAiMessage("user", msg);
+      textarea.value = "";
+      textarea.focus();
+
+      const loadingId = "ai-loading-" + Date.now();
+      appendAiLoadingMessage(loadingId);
+
+      try {
+        const res = await fetch("/api/wiki/ai-chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: msg,
+            doc_id: currentDocId,
+            history: aiChatHistory
+          })
+        });
+
+        removeAiLoadingMessage(loadingId);
+
+        if (res.ok) {
+          const data = await res.json();
+          appendAiMessage("assistant", data.reply, data.source);
+          aiChatHistory.push({ role: "user", content: msg });
+          aiChatHistory.push({ role: "assistant", content: data.reply });
+        } else {
+          appendAiMessage("assistant", "服务响应异常，请重试或检查设置。");
+        }
+      } catch (err) {
+        removeAiLoadingMessage(loadingId);
+        appendAiMessage("assistant", "无法连接后端 API 服务，请确认 run_server.py 正在运行。");
+      }
+    }
+
+    function appendAiMessage(role, text, source) {
+      const list = document.getElementById("ai-messages-list");
+      const wrapper = document.createElement("div");
+      wrapper.className = `ai-msg ${role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant'}`;
+
+      if (role === 'user') {
+        wrapper.textContent = text;
+      } else {
+        wrapper.innerHTML = marked.parse(text);
+        if (window.renderMathInElement) {
+          try {
+            renderMathInElement(wrapper, {
+              delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false}
+              ],
+              throwOnError: false
+            });
+          } catch (e) {}
+        }
+        if (source) {
+          const meta = document.createElement("div");
+          meta.className = "ai-msg-meta";
+          meta.innerText = (source === "builtin") ? "来源: 内置工业知识图谱引擎" : `来源: 外部模型 (${source})`;
+          wrapper.appendChild(meta);
+        }
+      }
+
+      list.appendChild(wrapper);
+      list.scrollTop = list.scrollHeight;
+    }
+
+    function appendAiLoadingMessage(id) {
+      const list = document.getElementById("ai-messages-list");
+      const wrapper = document.createElement("div");
+      wrapper.id = id;
+      wrapper.className = "ai-msg ai-msg-assistant";
+      wrapper.innerHTML = `<span style="color: var(--text-muted); font-size: 11.5px;">思考分析中...</span>`;
+      list.appendChild(wrapper);
+      list.scrollTop = list.scrollHeight;
+    }
+
+    function removeAiLoadingMessage(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+    async function openAiSettingsModal() {
+      const modal = document.getElementById("ai-settings-modal");
+      modal.style.display = "flex";
+
+      try {
+        const res = await fetch("/api/wiki/ai-config");
+        if (res.ok) {
+          const cfg = await res.json();
+          document.getElementById("setting-ai-provider").value = cfg.provider || "builtin";
+          document.getElementById("setting-ai-url").value = cfg.base_url || "https://api.openai.com/v1";
+          document.getElementById("setting-ai-model").value = cfg.model || "gpt-4o-mini";
+          const statusDiv = document.getElementById("setting-key-status");
+          if (cfg.has_key) {
+            statusDiv.innerText = `已配置有效密钥: ${cfg.masked_key} (留空则保持不变)`;
+          } else {
+            statusDiv.innerText = "未配置密钥 (内置引擎已就绪)";
+          }
+          handleAiProviderChange();
+        }
+      } catch (e) {}
+    }
+
+    function closeAiSettingsModal() {
+      document.getElementById("ai-settings-modal").style.display = "none";
+    }
+
+    function handleAiProviderChange() {
+      const p = document.getElementById("setting-ai-provider").value;
+      const isBuiltin = (p === "builtin");
+      document.getElementById("field-base-url").style.display = isBuiltin ? "none" : "flex";
+      document.getElementById("field-model").style.display = isBuiltin ? "none" : "flex";
+      document.getElementById("field-api-key").style.display = isBuiltin ? "none" : "flex";
+    }
+
+    async function saveAiSettings() {
+      const provider = document.getElementById("setting-ai-provider").value;
+      const base_url = document.getElementById("setting-ai-url").value;
+      const model = document.getElementById("setting-ai-model").value;
+      const key = document.getElementById("setting-ai-key").value;
+
+      try {
+        const res = await fetch("/api/wiki/ai-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: provider,
+            base_url: base_url,
+            model: model,
+            api_key: key || null
+          })
+        });
+        if (res.ok) {
+          showToast("AI 连接配置已更新", "#1aae39");
+          closeAiSettingsModal();
+          loadAiConfigIndicator();
+        }
+      } catch (e) {
+        showToast("保存配置失败", "#e11d48");
+      }
+    }
+
+    // ==========================================================================
+    // 网状知识图谱 (力导向网络图 Force-Directed Network Graph)
+    // ==========================================================================
+    function initNetworkGraph() {
+      const chartDom = document.getElementById("mindmap-container");
+      mindmapChart = echarts.init(chartDom, null, { renderer: 'canvas' });
+
+      const categories = [
+        { name: "01 系统全景架构", itemStyle: { color: "#d97706" } },
+        { name: "02 全流程数据源与ER", itemStyle: { color: "#cc785c" } },
+        { name: "03 ETL管道与内存引擎", itemStyle: { color: "#5db8a6" } },
+        { name: "04 17项指标与标准CPK", itemStyle: { color: "#ea580c" } },
+        { name: "05 核心归因与CGRS推荐", itemStyle: { color: "#b45309" } },
+        { name: "06 前端看板交互流转", itemStyle: { color: "#c2410c" } },
+        { name: "07 运维部署与排错SOP", itemStyle: { color: "#6c6a64" } }
+      ];
+
+      const nodes = [
+        { id: "h1", name: "01. 系统全景架构\n(六层分层拓扑)", symbolSize: 52, category: 0, doc_id: "01_system_architecture", anchor: "1-系统定位与核心业务目标" },
+        { id: "h1_1", name: "六层分层拓扑", symbolSize: 28, category: 0, doc_id: "01_system_architecture", anchor: "3-六层架构拓扑与数据流向" },
+        { id: "h1_2", name: "核心层无状态约束", symbolSize: 26, category: 0, doc_id: "01_system_architecture", anchor: "4-依赖隔离铁律与服务解耦注入机制" },
+        { id: "h1_3", name: "跨服务动态注入", symbolSize: 26, category: 0, doc_id: "01_system_architecture", anchor: "4-依赖隔离铁律与服务解耦注入机制" },
+
+        { id: "h2", name: "02. 全流程数据源\n(13道工序流转)", symbolSize: 52, category: 1, doc_id: "02_data_sources_and_er", anchor: "1-三大物理数据源与抽取边界" },
+        { id: "h2_1", name: "Redshift 产出大宽表", symbolSize: 30, category: 1, doc_id: "02_data_sources_and_er", anchor: "1-三大物理数据源与抽取边界" },
+        { id: "h2_2", name: "MES CGRS 调参库", symbolSize: 30, category: 1, doc_id: "02_data_sources_and_er", anchor: "1-三大物理数据源与抽取边界" },
+        { id: "h2_3", name: "Recipes 配方标准表", symbolSize: 28, category: 1, doc_id: "02_data_sources_and_er", anchor: "1-三大物理数据源与抽取边界" },
+        { id: "h2_4", name: "13道工序条码流转", symbolSize: 30, category: 1, doc_id: "02_data_sources_and_er", anchor: "2-13道工序流转与单胎生命周期" },
+        { id: "h2_5", name: "前7位规格模糊匹配", symbolSize: 26, category: 1, doc_id: "02_data_sources_and_er", anchor: "3-规格层级关系与模糊匹配规范" },
+
+        { id: "h3", name: "03. ETL流式清洗\n(DuckDB 4GB)", symbolSize: 52, category: 2, doc_id: "03_etl_pipeline_and_engine", anchor: "1-增量拉取与安全水位线机制" },
+        { id: "h3_1", name: "安全水位线(Max-1天)", symbolSize: 30, category: 2, doc_id: "03_etl_pipeline_and_engine", anchor: "1-增量拉取与安全水位线机制" },
+        { id: "h3_2", name: "DuckDB 4GB 内存保护", symbolSize: 30, category: 2, doc_id: "03_etl_pipeline_and_engine", anchor: "2-duckdb-内存保护与溢出盘管理" },
+        { id: "h3_3", name: "TG尺寸×1000换算mm", symbolSize: 28, category: 2, doc_id: "03_etl_pipeline_and_engine", anchor: "3-流式原子清洗与核心数据转换规则" },
+        { id: "h3_4", name: "配置 XOR 对称加密", symbolSize: 26, category: 2, doc_id: "03_etl_pipeline_and_engine", anchor: "4-数据库配置加密与常驻连接热自愈" },
+
+        { id: "h4", name: "04. 17项质检指标\n(标准 CPK 引擎)", symbolSize: 56, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "1-17项工序质检指标全景定义表" },
+        { id: "h4_1", name: "TU 均匀性 7 项(RFPP/CONY)", symbolSize: 32, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "1-17项工序质检指标全景定义表" },
+        { id: "h4_2", name: "TG 几何尺寸 7 项(TBUL...)", symbolSize: 30, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "1-17项工序质检指标全景定义表" },
+        { id: "h4_3", name: "TB 动平衡 3 项(TBALW...)", symbolSize: 30, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "1-17项工序质检指标全景定义表" },
+        { id: "h4_4", name: "单侧上限 CPK 公式", symbolSize: 28, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "4-单侧与双侧标准-cpk-纯函数实现" },
+        { id: "h4_5", name: "双侧公差 CPK 公式", symbolSize: 28, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "4-单侧与双侧标准-cpk-纯函数实现" },
+        { id: "h4_6", name: "8小时生产时间偏移", symbolSize: 26, category: 3, doc_id: "04_metrics_and_standard_cpk", anchor: "5-8小时生产时间偏移与全厂加权计算" },
+
+        { id: "h5", name: "05. 核心归因模型\n(CGRS 因果拆分)", symbolSize: 58, category: 4, doc_id: "05_core_algorithms_deepdive", anchor: "1-核心规格拉低贡献度评分-stable-score" },
+        { id: "h5_1", name: "规格拉低评分 StableScore", symbolSize: 30, category: 4, doc_id: "05_core_algorithms_deepdive", anchor: "1-核心规格拉低贡献度评分-stable-score" },
+        { id: "h5_2", name: "产量平方根平滑 (√N 消除背锅)", symbolSize: 36, category: 4, doc_id: "05_core_algorithms_deepdive", anchor: "2-产量平方根平滑机台贡献度算法-square-root" },
+        { id: "h5_3", name: "三级预警瀑布流\n[红/橙/黄]", symbolSize: 32, category: 4, doc_id: "05_core_algorithms_deepdive", anchor: "3-三级状态指示球-判定瀑布流" },
+        { id: "h5_4", name: "CGRS 路径拆分 (≥5胎/比值≤2.5)", symbolSize: 32, category: 4, doc_id: "05_core_algorithms_deepdive", anchor: "4-cgrs-调参因果分析与路径拆分引擎" },
+        { id: "h5_5", name: "成型/硫化/终检推荐差异化", symbolSize: 30, category: 4, doc_id: "05_core_algorithms_deepdive", anchor: "5-成型硫化终检多工段差异化推荐机制" },
+
+        { id: "h6", name: "06. 前端看板流转\n(四行大屏布局)", symbolSize: 52, category: 5, doc_id: "06_frontend_dashboard_views", anchor: "1-看板整体四行布局与视觉流向" },
+        { id: "h6_1", name: "四行流转仪表盘布局", symbolSize: 28, category: 5, doc_id: "06_frontend_dashboard_views", anchor: "1-看板整体四行布局与视觉流向" },
+        { id: "h6_2", name: "7 大核心业务图表组件", symbolSize: 30, category: 5, doc_id: "06_frontend_dashboard_views", anchor: "2-7大核心业务组件职责与接口调用" },
+        { id: "h6_3", name: "Pinia 全局状态响应链", symbolSize: 28, category: 5, doc_id: "06_frontend_dashboard_views", anchor: "3-全局状态响应链与-pinia-状态树" },
+
+        { id: "h7", name: "07. 系统运维部署\n(排错 SOP & 红线)", symbolSize: 52, category: 6, doc_id: "07_devops_and_troubleshooting", anchor: "1-生产环境局域网部署架构与自愈脚本" },
+        { id: "h7_1", name: "局域网共享部署\n(10.246.97.159)", symbolSize: 28, category: 6, doc_id: "07_devops_and_troubleshooting", anchor: "1-生产环境局域网部署架构与自愈脚本" },
+        { id: "h7_2", name: "故障排查与自愈 SOP", symbolSize: 30, category: 6, doc_id: "07_devops_and_troubleshooting", anchor: "3-常见疑难故障排查速查表-troubleshooting-sop" },
+        { id: "h7_3", name: "防劣铁律红线准则", symbolSize: 28, category: 6, doc_id: "07_devops_and_troubleshooting", anchor: "4-架构开发与数据维护红线-防劣铁律" }
+      ];
+
+      const links = [
+        { source: "h1", target: "h1_1" }, { source: "h1", target: "h1_2" }, { source: "h1", target: "h1_3" },
+        { source: "h2", target: "h2_1" }, { source: "h2", target: "h2_2" }, { source: "h2", target: "h2_3" }, { source: "h2", target: "h2_4" }, { source: "h2", target: "h2_5" },
+        { source: "h3", target: "h3_1" }, { source: "h3", target: "h3_2" }, { source: "h3", target: "h3_3" }, { source: "h3", target: "h3_4" },
+        { source: "h4", target: "h4_1" }, { source: "h4", target: "h4_2" }, { source: "h4", target: "h4_3" }, { source: "h4", target: "h4_4" }, { source: "h4", target: "h4_5" }, { source: "h4", target: "h4_6" },
+        { source: "h5", target: "h5_1" }, { source: "h5", target: "h5_2" }, { source: "h5", target: "h5_3" }, { source: "h5", target: "h5_4" }, { source: "h5", target: "h5_5" },
+        { source: "h6", target: "h6_1" }, { source: "h6", target: "h6_2" }, { source: "h6", target: "h6_3" },
+        { source: "h7", target: "h7_1" }, { source: "h7", target: "h7_2" }, { source: "h7", target: "h7_3" },
+
+        { source: "h1", target: "h2", lineStyle: { width: 3, type: "solid", color: "#d97706" } },
+        { source: "h2", target: "h3", lineStyle: { width: 3, type: "solid", color: "#cc785c" } },
+        { source: "h3", target: "h4", lineStyle: { width: 3, type: "solid", color: "#5db8a6" } },
+        { source: "h4", target: "h5", lineStyle: { width: 3.5, type: "solid", color: "#ea580c" } },
+        { source: "h5", target: "h6", lineStyle: { width: 3.5, type: "solid", color: "#b45309" } },
+        { source: "h1", target: "h7", lineStyle: { width: 2.5, type: "dashed", color: "#8e8b82" } },
+        { source: "h2_2", target: "h5_4", lineStyle: { width: 2, type: "dotted", color: "#d97706" } }
+      ];
+
+      const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          borderWidth: 1,
+          textStyle: { color: '#1a1a1a', fontSize: 12 },
+          formatter: function (params) {
+            if (params.dataType === 'node') {
+              return `<strong>${params.data.name.replace(/\n/g, ' ')}</strong><br/><span style="color:#6b7280;">点击直达文档章节</span>`;
+            }
+            return '';
+          }
+        },
+        legend: [{
+          data: categories.map(c => c.name),
+          top: 16,
+          left: 'center',
+          textStyle: { color: '#4b5563', fontSize: 11.5 }
+        }],
+        series: [
+          {
+            type: 'graph',
+            layout: 'force',
+            data: nodes,
+            links: links,
+            categories: categories,
+            roam: true,
+            label: {
+              show: true,
+              position: 'bottom',
+              formatter: '{b}',
+              fontSize: 11.5,
+              fontWeight: 500,
+              color: '#374151'
+            },
+            force: {
+              repulsion: 380,
+              gravity: 0.08,
+              edgeLength: [60, 130],
+              friction: 0.6
+            },
+            lineStyle: {
+              color: '#cbd5e1',
+              width: 1.5,
+              curveness: 0.15
+            },
+            emphasis: {
+              focus: 'adjacency',
+              lineStyle: {
+                width: 3.5,
+                color: '#d97706'
+              },
+              itemStyle: {
+                shadowBlur: 10,
+                shadowColor: 'rgba(217, 119, 6, 0.3)'
+              }
+            }
+          }
+        ]
+      };
+
+      mindmapChart.setOption(option);
+
+      mindmapChart.on('click', (params) => {
+        if (params.dataType === 'node' && params.data && params.data.doc_id) {
+          jumpToSection(params.data.doc_id, params.data.anchor || "");
+          showToast(`已导航至: ${params.data.name.replace(/\n/g, ' ')}`, "#5645d4");
+        }
+      });
+
+      window.addEventListener("resize", () => {
+        if (mindmapChart) mindmapChart.resize();
+      });
+    }
+
+    // 全局即时搜索
+    function handleGlobalSearch(keyword) {
+      const q = keyword.toLowerCase().trim();
+      const cards = document.querySelectorAll(".module-card");
+      if (!q) {
+        cards.forEach(c => c.style.display = "block");
+        return;
+      }
+      cards.forEach(c => {
+        const text = c.innerText.toLowerCase();
+        c.style.display = text.includes(q) ? "block" : "none";
+      });
+    }
+
+    // Toast 提示
+    function showToast(msg, bg = "#d97706") {
+      const t = document.getElementById("toast");
+      t.innerText = msg;
+      t.style.borderLeft = `4px solid ${bg}`;
+      t.style.display = "flex";
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        t.style.display = "none";
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
